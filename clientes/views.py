@@ -14,7 +14,7 @@ class ClienteListView(generics.ListAPIView):
     serializer_class = ClienteSerializer
 
 
-class ClienteDetailView(generics.RetrieveAPIView):
+class ClienteDetailView(generics.RetrieveUpdateAPIView):
     queryset = Cliente.objects.all()
     serializer_class = ClienteSerializer
     lookup_field = "id_cliente"
