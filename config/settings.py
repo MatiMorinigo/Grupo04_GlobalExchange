@@ -1,7 +1,8 @@
 from pathlib import Path
 import os
 from dotenv import load_dotenv
-
+OIDC_STORE_ACCESS_TOKEN = True
+OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 240
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
