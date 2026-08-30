@@ -1,9 +1,24 @@
 # Variables de entorno
 .env
+*.env.local
 
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+.Python
+*.pyc
+
+# Django
+*.log
+db.sqlite3
+media/
+
+# VS Code
+.vscode/
+
+# Docker
 
 # Entorno virtual
 .venv/

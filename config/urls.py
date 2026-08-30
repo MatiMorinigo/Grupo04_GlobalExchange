@@ -1,22 +1,21 @@
-"""
-URL configuration for config project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
 from django.contrib import admin
+from django.contrib.auth import logout
+from django.shortcuts import redirect, render
 from django.urls import include, path
+
 from core import views as core_views
+
+
+def custom_logout(request):
+    logout(request)
+    return redirect(
+        "http://localhost:8080/realms/global-exchange/protocol/openid-connect/logout"
+        "?redirect_uri=http://localhost:8000"
+    )
+
+
+def verificacion_fallida(request):
+    return render(request, "auth/verificacion_fallida.html")
 
 
 urlpatterns = [
@@ -24,4 +23,6 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("clientes.urls")),
     path("oidc/", include("mozilla_django_oidc.urls")),
+    path("logout/", custom_logout, name="logout"),
+    path("verificacion-fallida/", verificacion_fallida, name="verificacion_fallida"),
 ]
