@@ -64,8 +64,8 @@ class HomeViewTests(SimpleTestCase):
         content = response.content.decode("utf-8")
         module_links = re.findall(r'<a href="([^"]+)" class="small-box-footer', content)
 
-        self.assertEqual(module_links, [reverse("cliente-create")])
-        self.assertIn("Abrir Clientes", content)
+        self.assertEqual(module_links, [reverse("cliente-web-list")])
+        self.assertIn("Ver Clientes", content)
 
     def test_upcoming_modules_are_not_keyboard_links(self):
         response = self.render_home(AnonymousUser())

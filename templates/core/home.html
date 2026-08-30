@@ -26,7 +26,28 @@
     }
 
     .module-card .small-box-footer {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .4rem;
         font-weight: 600;
+        text-decoration: none;
+        transition: background-color .15s ease-in-out;
+    }
+
+    .module-card .small-box-footer:hover,
+    .module-card .small-box-footer:focus {
+        text-decoration: none;
+    }
+
+    .module-card-action-icon {
+        font-size: 1rem;
+        transition: transform .15s ease-in-out;
+    }
+
+    .module-card:not(.module-card-disabled) .small-box-footer:hover .module-card-action-icon,
+    .module-card:not(.module-card-disabled) .small-box-footer:focus .module-card-action-icon {
+        transform: translateX(.15rem);
     }
 
     .module-card-disabled {
@@ -93,12 +114,14 @@
             </div>
             <i class="small-box-icon {{ module.icon }}" aria-hidden="true"></i>
             {% if module.enabled %}
-            <a href="{{ module.href }}" class="small-box-footer {{ module.link_class }} link-underline-opacity-0 link-underline-opacity-50-hover">
-                {{ module.action_label }} <i class="bi bi-link-45deg" aria-hidden="true"></i>
+            <a href="{{ module.href }}" class="small-box-footer {{ module.link_class }}" aria-label="{{ module.action_label }}">
+                <span>{{ module.action_label }}</span>
+                <i class="bi bi-arrow-right-circle module-card-action-icon" aria-hidden="true"></i>
             </a>
             {% else %}
             <span class="small-box-footer {{ module.link_class }}" aria-disabled="true" data-bs-toggle="tooltip" data-bs-title="{{ module.disabled_reason }}">
-                {{ module.action_label }} <i class="bi bi-clock" aria-hidden="true"></i>
+                <span>{{ module.action_label }}</span>
+                <i class="bi bi-clock module-card-action-icon" aria-hidden="true"></i>
             </span>
             {% endif %}
         </div>

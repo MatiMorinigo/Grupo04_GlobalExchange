@@ -21,6 +21,7 @@ def verificacion_fallida(request):
 urlpatterns = [
     path("", core_views.home, name="home"),
     path("admin/", admin.site.urls),
+    path("clientes/", include("clientes.web_urls")),
     path("api/", include("clientes.urls")),
     path("oidc/", include("mozilla_django_oidc.urls")),
     path("logout/", custom_logout, name="logout"),
