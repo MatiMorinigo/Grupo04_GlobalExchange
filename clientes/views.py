@@ -10,9 +10,29 @@ class ClienteCreateView(generics.CreateAPIView):
     queryset = Cliente.objects.all()
     serializer_class = ClienteSerializer
 
+
 class ClienteListView(generics.ListAPIView):
-    queryset = Cliente.objects.all()
     serializer_class = ClienteSerializer
+
+    def get_queryset(self):
+        queryset = Cliente.objects.all()
+
+        categoria = self.request.query_params.get("categoria")
+        tipo = self.request.query_params.get("tipo")
+        activo = self.request.query_params.get("activo")
+
+        if categoria:
+            queryset = queryset.filter(categoria=categoria)
+
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
+
+        if activo is not None:
+            queryset = queryset.filter(
+                activo=activo.lower() == "true"
+            )
+
+        return queryset
 
 class ClienteDetailView(generics.RetrieveUpdateAPIView):
     queryset = Cliente.objects.all()
