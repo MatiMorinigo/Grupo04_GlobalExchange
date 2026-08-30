@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}Global Exchange{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@4.0.0-beta3/dist/css/adminlte.min.css">
+    {% block styles %}{% endblock %}
+</head>
+
+<body class="layout-fixed sidebar-expand-lg sidebar-mini bg-body-tertiary">
+<div class="app-wrapper">
+
+    <nav class="app-header navbar navbar-expand bg-body">
+        <div class="container-fluid">
+            <ul class="navbar-nav">
+                <li class="nav-item">
+                    <a class="nav-link" data-lte-toggle="sidebar" href="#" role="button" aria-label="Alternar menu">
+                        <i class="bi bi-list"></i>
+                    </a>
+                </li>
+                <li class="nav-item d-none d-md-block">
+                    <a href="{% url 'home' %}" class="nav-link">
+                        <i class="bi bi-grid-1x2 me-1" aria-hidden="true"></i>
+                        Inicio
+                    </a>
+                </li>
+            </ul>
+
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="#" data-lte-toggle="fullscreen" aria-label="Pantalla completa">
+                        <i data-lte-icon="maximize" class="bi bi-arrows-fullscreen"></i>
+                        <i data-lte-icon="minimize" class="bi bi-fullscreen-exit d-none"></i>
+                    </a>
+                </li>
+                <li class="nav-item d-none d-md-block">
+                    <span class="nav-link">
+                        <i class="bi bi-person-circle me-1" aria-hidden="true"></i>
+                        {% if request.user.is_authenticated %}{{ request.user.get_username }}{% else %}Invitado{% endif %}
+                    </span>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="dark">
+        <div class="sidebar-brand">
+            <a href="{% url 'home' %}" class="brand-link">
+                <i class="brand-image bi bi-currency-exchange opacity-75 shadow"></i>
+                <span class="brand-text fw-light">Global Exchange</span>
+            </a>
+        </div>
+
+        <div class="sidebar-wrapper">
+            <nav class="mt-2" aria-label="Menu principal">
+                {% block sidebar %}
+                <ul class="nav sidebar-menu flex-column" data-lte-toggle="treeview" data-accordion="false" role="menu">
+                    <li class="nav-item">
+                        <a href="{% url 'home' %}" class="nav-link {% if active_menu == 'home' %}active{% endif %}">
+                            <i class="nav-icon bi bi-speedometer2"></i>
+                            <p>Menu principal</p>
+                        </a>
+                    </li>
+                    <li class="nav-header">OPERACION</li>
+                    <li class="nav-item">
+                        <a href="{% url 'cliente-create' %}" class="nav-link {% if active_menu == 'clientes' %}active{% endif %}">
+                            <i class="nav-icon bi bi-people"></i>
+                            <p>Clientes</p>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link">
+                            <i class="nav-icon bi bi-arrow-left-right"></i>
+                            <p>Operaciones de cambio</p>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link">
+                            <i class="nav-icon bi bi-graph-up-arrow"></i>
+                            <p>Cotizaciones</p>
+                        </a>
+                    </li>
+                    <li class="nav-header">GESTION</li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link">
+                            <i class="nav-icon bi bi-file-earmark-bar-graph"></i>
+                            <p>Reportes</p>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link">
+                            <i class="nav-icon bi bi-person-gear"></i>
+                            <p>Usuarios</p>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link">
+                            <i class="nav-icon bi bi-sliders"></i>
+                            <p>Configuracion</p>
+                        </a>
+                    </li>
+                </ul>
+                {% endblock %}
+            </nav>
+        </div>
+    </aside>
+
+    <main class="app-main">
+        {% block content_header %}{% endblock %}
+        <div class="app-content">
+            <div class="container-fluid">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </main>
+
+    <footer class="app-footer small">
+        <div class="float-end d-none d-sm-inline">Primera version visual</div>
+        <strong>Global Exchange</strong>
+    </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/admin-lte@4.0.0-beta3/dist/js/adminlte.min.js"></script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

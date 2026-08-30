@@ -1,45 +1,45 @@
 from pathlib import Path
 import os
-from dotenv import load_dotenv
-<<<<<<< HEAD
-=======
 
-load_dotenv()
->>>>>>> origin/feature/SCRUM-17
+from dotenv import load_dotenv
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-<<<<<<< HEAD
 load_dotenv(BASE_DIR / ".env")
-=======
+
 # Seguridad
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-cambiar-en-produccion')
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
->>>>>>> origin/feature/SCRUM-17
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "django-insecure-cambiar-en-produccion",
+)
+DEBUG = os.getenv("DEBUG", "True") == "True"
+ALLOWED_HOSTS = os.getenv(
+    "ALLOWED_HOSTS",
+    "localhost,127.0.0.1",
+).split(",")
 
 # Aplicaciones
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-<<<<<<< HEAD
-    'clientes',
-=======
-    # DRF
-    'rest_framework',
-    'corsheaders',
-    # OIDC - Keycloak
-    'mozilla_django_oidc',
-    # Apps del proyecto
-    'clientes',
-    'core',
-    'integrations',
-    'usuarios',
->>>>>>> origin/feature/SCRUM-17
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+
+    # Django REST Framework
+    "rest_framework",
+    "corsheaders",
+
+    # Autenticacion con Keycloak
+    "mozilla_django_oidc",
+
+    # Aplicaciones del proyecto
+    "clientes",
+    "core",
+    "integrations",
+    "usuarios",
 ]
 
 MIDDLEWARE = [
@@ -94,7 +94,7 @@ OIDC_OP_TOKEN_ENDPOINT = os.getenv('OIDC_OP_TOKEN_ENDPOINT')
 OIDC_OP_USER_ENDPOINT = os.getenv('OIDC_OP_USER_ENDPOINT')
 OIDC_OP_JWKS_ENDPOINT = os.getenv('OIDC_OP_JWKS_ENDPOINT')
 
-# Redireccionamiento después del login/logout
+# Redireccionamiento despues del login/logout
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
 LOGIN_URL = '/oidc/authenticate/'
@@ -127,14 +127,19 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# Internacionalización
+# Internacionalizacion
 LANGUAGE_CODE = 'es'
 TIME_ZONE = 'America/Asuncion'
 USE_I18N = True
 USE_TZ = True
 
-# Archivos estáticos
-STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+# Archivos staticos
+STATIC_URL = "/static/"
+
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]
+
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
