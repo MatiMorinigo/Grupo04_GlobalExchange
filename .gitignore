@@ -21,4 +21,13 @@ media/
 .vscode/
 
 # Docker
-*.env.local
+*.env.local# Variables de entorno
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Entorno virtual
+.venv/
+venv/

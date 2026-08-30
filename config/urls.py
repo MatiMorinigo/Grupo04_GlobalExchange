@@ -17,7 +17,8 @@ def home(request):
     """)
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path("admin/", admin.site.urls),
     path('oidc/', include('mozilla_django_oidc.urls')),
     path('', home, name='home'),
+    path("api/", include("clientes.urls")),
 ]
