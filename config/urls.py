@@ -23,4 +23,5 @@ urlpatterns = [
     path("", core_views.home, name="home"),
     path("admin/", admin.site.urls),
     path("api/", include("clientes.urls")),
+    path("oidc/", include("mozilla_django_oidc.urls")),
 ]

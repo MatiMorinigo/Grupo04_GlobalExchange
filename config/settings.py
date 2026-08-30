@@ -18,6 +18,7 @@ ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS",
     "localhost,127.0.0.1",
 ).split(",")
+APP_ENV = os.getenv("APP_ENV", "Desarrollo")
 
 # Aplicaciones
 INSTALLED_APPS = [
@@ -66,6 +67,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.app_environment',
             ],
         },
     },

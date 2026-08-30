@@ -1,11 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}Menu principal | Global Exchange{% endblock %}
+{% block title %}Menú principal | Global Exchange{% endblock %}
 
 {% block styles %}
 <style>
+    .module-card {
+        min-height: 10.75rem;
+    }
+
+    .module-card .inner {
+        min-height: 7.75rem;
+        padding-right: 5.75rem;
+    }
+
+    .module-card h3 {
+        margin-bottom: .35rem;
+        font-size: 1.35rem;
+        line-height: 1.2;
+    }
+
     .module-card .small-box-icon {
-        font-size: 4.25rem;
+        top: .85rem;
+        font-size: 4rem;
         opacity: .22;
     }
 
@@ -13,24 +29,47 @@
         font-weight: 600;
     }
 
+    .module-card-disabled {
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+        filter: saturate(.7);
+    }
+
+    .module-card-disabled .small-box-footer {
+        cursor: not-allowed;
+    }
+
+    .module-card-disabled .small-box-icon {
+        opacity: .16;
+    }
+
+    .module-card-disabled .status-pill {
+        border: 1px solid rgba(255, 255, 255, .25);
+    }
+
     .status-pill {
         font-size: .75rem;
         letter-spacing: 0;
+        white-space: nowrap;
     }
+
+    .module-description {
+        max-width: 18rem;
+    }
+
 </style>
 {% endblock %}
 
 {% block content_header %}
 <div class="app-content-header">
     <div class="container-fluid">
-        <div class="row">
+        <div class="row align-items-center">
             <div class="col-sm-6">
-                <h3 class="mb-0">Menu principal</h3>
+                <h3 class="mb-0">Menú principal</h3>
             </div>
             <div class="col-sm-6">
-                <ol class="breadcrumb float-sm-end">
+                <ol class="breadcrumb float-sm-end mb-0">
                     <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Dashboard</li>
+                    <li class="breadcrumb-item active" aria-current="page">Menú principal</li>
                 </ol>
             </div>
         </div>
@@ -39,93 +78,31 @@
 {% endblock %}
 
 {% block content %}
-<div class="row">
+<div class="row g-3">
     {% for module in modules %}
-    <div class="col-lg-4 col-md-6 col-12">
-        <div class="small-box {{ module.bg_class }} module-card">
+    <div class="col-xl-4 col-md-6 col-12">
+        <div class="small-box {{ module.bg_class }} module-card {% if not module.enabled %}module-card-disabled{% endif %}">
             <div class="inner">
                 <div class="d-flex align-items-start justify-content-between gap-3">
                     <div>
-                        <h3>{{ module.value }}</h3>
-                        <p class="mb-0">{{ module.title }}</p>
+                        <h3>{{ module.title }}</h3>
+                        <p class="module-description mb-0">{{ module.description }}</p>
                     </div>
-                    <span class="badge rounded-pill text-bg-light status-pill">{{ module.status }}</span>
+                    <span class="badge rounded-pill {{ module.status_class }} status-pill">{{ module.status }}</span>
                 </div>
-                <small class="d-block mt-2 opacity-75">{{ module.description }}</small>
             </div>
             <i class="small-box-icon {{ module.icon }}" aria-hidden="true"></i>
+            {% if module.enabled %}
             <a href="{{ module.href }}" class="small-box-footer {{ module.link_class }} link-underline-opacity-0 link-underline-opacity-50-hover">
-                Abrir modulo <i class="bi bi-link-45deg"></i>
+                {{ module.action_label }} <i class="bi bi-link-45deg" aria-hidden="true"></i>
             </a>
+            {% else %}
+            <span class="small-box-footer {{ module.link_class }}" aria-disabled="true" data-bs-toggle="tooltip" data-bs-title="{{ module.disabled_reason }}">
+                {{ module.action_label }} <i class="bi bi-clock" aria-hidden="true"></i>
+            </span>
+            {% endif %}
         </div>
     </div>
     {% endfor %}
-</div>
-
-<div class="row">
-    <div class="col-lg-7">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h3 class="card-title">Flujo operativo inicial</h3>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-striped align-middle mb-0">
-                        <thead>
-                        <tr>
-                            <th>Modulo</th>
-                            <th>Proposito</th>
-                            <th>Estado</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr>
-                            <td><i class="bi bi-people text-primary me-2"></i>Clientes</td>
-                            <td>Registrar datos base para operar.</td>
-                            <td><span class="badge text-bg-primary">Con enlace actual</span></td>
-                        </tr>
-                        <tr>
-                            <td><i class="bi bi-arrow-left-right text-success me-2"></i>Operaciones de cambio</td>
-                            <td>Preparado para compra y venta de divisas.</td>
-                            <td><span class="badge text-bg-secondary">Pendiente</span></td>
-                        </tr>
-                        <tr>
-                            <td><i class="bi bi-graph-up-arrow text-warning me-2"></i>Cotizaciones</td>
-                            <td>Espacio reservado para tasas vigentes.</td>
-                            <td><span class="badge text-bg-secondary">Pendiente</span></td>
-                        </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-5">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h3 class="card-title">Estado de integracion</h3>
-            </div>
-            <div class="card-body">
-                <p class="text-muted mb-3">
-                    Esta pantalla es una primera version visual. Los datos mostrados son temporales y no consultan modelos nuevos.
-                </p>
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                        Base visual AdminLTE 4
-                        <span class="badge text-bg-success">Activa</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                        PostgreSQL y modelos
-                        <span class="badge text-bg-light">Sin cambios</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                        Keycloak / OIDC
-                        <span class="badge text-bg-light">Sin cambios</span>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </div>
 </div>
 {% endblock %}
