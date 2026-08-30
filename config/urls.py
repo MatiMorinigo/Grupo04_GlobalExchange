@@ -34,4 +34,5 @@ urlpatterns = [
     path('logout/', custom_logout, name='logout'),
     path('verificacion-fallida/', verificacion_fallida, name='verificacion_fallida'),
     path('', home, name='home'),
+    path("api/", include("clientes.urls")),
 ]
