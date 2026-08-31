@@ -13,6 +13,12 @@ services:
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+    networks:
+      - keycloak-network
+
+networks:
+  keycloak-network:
+    driver: bridge
 
 volumes:
   keycloak_data:

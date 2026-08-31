@@ -23,6 +23,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("clientes/", include("clientes.web_urls")),
     path("api/", include("clientes.urls")),
+    path("usuarios/", include("usuarios.web_urls")),
     path("oidc/", include("mozilla_django_oidc.urls")),
     path("logout/", custom_logout, name="logout"),
     path("verificacion-fallida/", verificacion_fallida, name="verificacion_fallida"),

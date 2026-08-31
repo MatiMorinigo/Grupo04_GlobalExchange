@@ -157,6 +157,30 @@
                             <p>Configuración</p>
                         </span>
                     </li>
+                    {% if request.user.is_authenticated %}
+                    <li class="nav-header">ASOCIACIONES</li>
+                    {% if request.user.is_staff or request.user.is_superuser %}
+                    <li class="nav-item">
+                        <a href="{% url 'admin-solicitudes' %}" class="nav-link {% if active_menu == 'admin_solicitudes' %}active{% endif %}">
+                            <i class="nav-icon bi bi-person-check"></i>
+                            <p>Solicitudes de asociación</p>
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a href="{% url 'solicitar-asociacion' %}" class="nav-link {% if active_menu == 'solicitudes' %}active{% endif %}">
+                            <i class="nav-icon bi bi-person-plus"></i>
+                            <p>Solicitar asociación</p>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="{% url 'mis-solicitudes' %}" class="nav-link {% if active_menu == 'mis_solicitudes' %}active{% endif %}">
+                            <i class="nav-icon bi bi-list-check"></i>
+                            <p>Mis solicitudes</p>
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% endif %}
                 </ul>
                 {% endblock %}
             </nav>

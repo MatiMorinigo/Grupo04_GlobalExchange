@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Mis solicitudes | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Mis solicitudes de asociación</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Mis solicitudes</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0 text-secondary">
+                {{ solicitudes.count }} solicitud{{ solicitudes.count|pluralize:"es" }} registrada{{ solicitudes.count|pluralize:"s" }}
+            </h5>
+            <a href="{% url 'solicitar-asociacion' %}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                Nueva solicitud
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if solicitudes %}
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Cliente</th>
+                        <th>RUC</th>
+                        <th>Estado</th>
+                        <th>Fecha de solicitud</th>
+                        <th>Fecha de resolución</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in solicitudes %}
+                    <tr>
+                        <td>
+                            <span class="fw-semibold">{{ s.cliente.nombre }}</span>
+                            <div class="small text-secondary">{{ s.cliente.get_categoria_display }} · {{ s.cliente.get_tipo_display }}</div>
+                        </td>
+                        <td class="text-nowrap">{{ s.cliente.ruc }}</td>
+                        <td>
+                            {% if s.estado == "PENDIENTE" %}
+                            <span class="badge text-bg-warning">
+                                <i class="bi bi-clock me-1" aria-hidden="true"></i>Pendiente
+                            </span>
+                            {% elif s.estado == "APROBADA" %}
+                            <span class="badge text-bg-success">
+                                <i class="bi bi-check-circle me-1" aria-hidden="true"></i>Aprobada
+                            </span>
+                            {% else %}
+                            <span class="badge text-bg-danger">
+                                <i class="bi bi-x-circle me-1" aria-hidden="true"></i>Rechazada
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-nowrap small">{{ s.fecha_solicitud|date:"d/m/Y H:i" }}</td>
+                        <td class="text-nowrap small text-secondary">
+                            {% if s.fecha_resolucion %}
+                                {{ s.fecha_resolucion|date:"d/m/Y H:i" }}
+                            {% else %}
+                                <span class="text-secondary">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-5 text-center">
+            <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center mb-3" style="width: 4rem; height: 4rem;">
+                <i class="bi bi-inbox fs-3" aria-hidden="true"></i>
+            </div>
+            <h4 class="h5 mb-1">No tenés solicitudes</h4>
+            <p class="text-secondary mb-3">Solicitá la asociación con un cliente para comenzar a operar.</p>
+            <a href="{% url 'solicitar-asociacion' %}" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                Solicitar asociación
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
