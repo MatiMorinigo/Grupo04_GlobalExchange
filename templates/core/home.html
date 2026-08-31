@@ -1,0 +1,338 @@
+{% extends "base.html" %}
+
+{% block title %}Menú principal | Global Exchange{% endblock %}
+
+{% block styles %}
+<style>
+    .module-card {
+        min-height: 10.75rem;
+    }
+
+    .module-card .inner {
+        min-height: 7.75rem;
+        padding-right: 5.75rem;
+    }
+
+    .module-card h3 {
+        margin-bottom: .35rem;
+        font-size: 1.35rem;
+        line-height: 1.2;
+    }
+
+    .module-card-header {
+        flex-wrap: wrap;
+    }
+
+    .module-card-copy {
+        min-width: 0;
+        flex: 1 1 12rem;
+    }
+
+    .module-card .small-box-icon {
+        top: .85rem;
+        font-size: 4rem;
+        opacity: .22;
+    }
+
+    .module-card .small-box-footer {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .4rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: background-color .15s ease-in-out;
+    }
+
+    .module-card .small-box-footer:hover,
+    .module-card .small-box-footer:focus {
+        text-decoration: none;
+    }
+
+    .module-card-action-icon {
+        font-size: 1rem;
+        transition: transform .15s ease-in-out;
+    }
+
+    .module-card:not(.module-card-disabled) .small-box-footer:hover .module-card-action-icon,
+    .module-card:not(.module-card-disabled) .small-box-footer:focus .module-card-action-icon {
+        transform: translateX(.15rem);
+    }
+
+    .module-card-disabled {
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+        filter: saturate(.7);
+    }
+
+    .module-card-disabled .small-box-footer {
+        cursor: not-allowed;
+    }
+
+    .module-card-disabled .small-box-icon {
+        opacity: .16;
+    }
+
+    .module-card-disabled .status-pill {
+        border: 1px solid rgba(255, 255, 255, .25);
+    }
+
+    .status-pill {
+        max-width: 100%;
+        flex-shrink: 0;
+        font-size: .75rem;
+        letter-spacing: 0;
+        white-space: nowrap;
+    }
+
+    .module-description {
+        max-width: 18rem;
+    }
+</style>
+{% endblock %}
+
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Menú principal</h3>
+            </div>
+
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'home' %}">Inicio</a>
+                    </li>
+                    <li class="breadcrumb-item active" aria-current="page">
+                        Menú principal
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block content %}
+
+{% if request.user.is_authenticated %}
+
+{# ── Sección cliente activo para cualquier usuario autenticado ── #}
+<div class="mb-4">
+
+    {% if clientes_aprobados %}
+
+    <div class="card border-0 shadow-sm"
+         style="border-left: 4px solid var(--bs-success) !important;">
+
+        <div class="card-body py-3">
+
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+
+                <div class="d-flex align-items-center gap-3">
+
+                    <div class="rounded-circle bg-success-subtle text-success d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                         style="width:3rem;height:3rem;">
+                        <i class="bi bi-building-check fs-5" aria-hidden="true"></i>
+                    </div>
+
+                    <div>
+                        <div class="small text-secondary mb-1">
+                            Cliente activo
+                        </div>
+
+                        {% if cliente_activo %}
+
+                        <h5 class="mb-0 fw-bold">
+                            {{ cliente_activo.nombre }}
+                        </h5>
+
+                        <div class="small text-secondary">
+                            RUC: {{ cliente_activo.ruc }}
+                            &middot; {{ cliente_activo.get_categoria_display }}
+                            &middot; {{ cliente_activo.get_tipo_display }}
+                        </div>
+
+                        {% else %}
+
+                        <h5 class="mb-0 fw-semibold text-secondary">
+                            Sin cliente activo
+                        </h5>
+
+                        {% endif %}
+                    </div>
+                </div>
+
+
+                {% if clientes_aprobados|length > 1 %}
+
+                <div>
+                    <form method="post"
+                          action="{% url 'seleccionar-cliente-activo' %}"
+                          class="d-flex align-items-center gap-2">
+
+                        {% csrf_token %}
+
+                        <label for="selector-cliente-activo"
+                               class="small text-secondary text-nowrap">
+                            Cambiar a:
+                        </label>
+
+                        <select
+                            id="selector-cliente-activo"
+                            name="id_cliente"
+                            class="form-select form-select-sm"
+                            style="min-width:180px;"
+                            onchange="this.form.submit()"
+                            aria-label="Seleccionar cliente activo"
+                        >
+
+                            {% for c in clientes_aprobados %}
+
+                            <option value="{{ c.id_cliente }}"
+                                {% if cliente_activo and c.id_cliente == cliente_activo.id_cliente %}
+                                    selected
+                                {% endif %}
+                            >
+                                {{ c.nombre }}
+                            </option>
+
+                            {% endfor %}
+
+                        </select>
+
+                        <noscript>
+                            <button type="submit"
+                                    class="btn btn-sm btn-success">
+                                Aplicar
+                            </button>
+                        </noscript>
+
+                    </form>
+                </div>
+
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+
+
+    {% else %}
+
+    <div class="card border-0 bg-body-secondary">
+
+        <div class="card-body py-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+
+            <div class="d-flex align-items-center gap-3">
+
+                <div class="rounded-circle bg-warning-subtle text-warning d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width:3rem;height:3rem;">
+                    <i class="bi bi-person-plus fs-5" aria-hidden="true"></i>
+                </div>
+
+                <div>
+                    <h5 class="mb-1 fw-semibold">
+                        Sin cliente asociado
+                    </h5>
+
+                    <p class="mb-0 text-secondary small">
+                        Solicitá la asociación con un cliente para comenzar a operar.
+                    </p>
+                </div>
+
+            </div>
+
+            <a href="{% url 'solicitar-asociacion' %}"
+               class="btn btn-warning btn-sm">
+
+                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                Solicitar asociación
+
+            </a>
+
+        </div>
+    </div>
+
+    {% endif %}
+
+</div>
+
+{% endif %}
+
+
+<div class="row g-3">
+
+    {% for module in modules %}
+
+    <div class="col-xl-4 col-md-6 col-12">
+
+        <div class="small-box {{ module.bg_class }} module-card {% if not module.enabled %}module-card-disabled{% endif %}">
+
+            <div class="inner">
+
+                <div class="d-flex align-items-start justify-content-between gap-3 module-card-header">
+
+                    <div class="module-card-copy">
+
+                        <h3>{{ module.title }}</h3>
+
+                        <p class="module-description mb-0">
+                            {{ module.description }}
+                        </p>
+
+                    </div>
+
+                    <span class="badge rounded-pill {{ module.status_class }} status-pill">
+                        {{ module.status }}
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <i class="small-box-icon {{ module.icon }}"
+               aria-hidden="true"></i>
+
+
+            {% if module.enabled %}
+
+            <a href="{{ module.href }}"
+               class="small-box-footer {{ module.link_class }}"
+               aria-label="{{ module.action_label }}">
+
+                <span>{{ module.action_label }}</span>
+
+                <i class="bi bi-arrow-right-circle module-card-action-icon"
+                   aria-hidden="true"></i>
+
+            </a>
+
+            {% else %}
+
+            <span class="small-box-footer {{ module.link_class }}"
+                  aria-disabled="true"
+                  data-bs-toggle="tooltip"
+                  data-bs-title="{{ module.disabled_reason }}">
+
+                <span>{{ module.action_label }}</span>
+
+                <i class="bi bi-clock module-card-action-icon"
+                   aria-hidden="true"></i>
+
+            </span>
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+</div>
+
+{% endblock %}

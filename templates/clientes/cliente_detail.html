@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}{{ cliente.nombre }} | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Detalle de cliente</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'cliente-web-list' %}">Clientes</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ cliente.nombre }}</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center mb-3" style="width: 96px; height: 96px; font-size: 2rem;" aria-hidden="true">
+                    {{ cliente.nombre|slice:":1"|upper }}
+                </div>
+                <h3 class="h5 mb-1">{{ cliente.nombre }}</h3>
+                <p class="text-secondary mb-3">{{ cliente.ruc }}</p>
+                {% if cliente.activo %}
+                <span class="badge text-bg-success">Activo</span>
+                {% else %}
+                <span class="badge text-bg-secondary">Inactivo</span>
+                {% endif %}
+                <a href="{% url 'cliente-web-update' cliente.id_cliente %}" class="btn btn-primary w-100 mt-3">
+                    <i class="bi bi-pencil me-1" aria-hidden="true"></i>
+                    Editar cliente
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Información registrada</h3>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0">
+                    <tbody>
+                        <tr>
+                            <th scope="row" style="width: 14rem;">ID</th>
+                            <td>{{ cliente.id_cliente }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">RUC</th>
+                            <td>{{ cliente.ruc }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Nombre</th>
+                            <td>{{ cliente.nombre }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Categoría</th>
+                            <td>{{ cliente.get_categoria_display }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Tipo</th>
+                            <td>{{ cliente.get_tipo_display }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Estado</th>
+                            <td>
+                                {% if cliente.activo %}
+                                Activo
+                                {% else %}
+                                Inactivo
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer d-flex justify-content-between">
+                <a href="{% url 'cliente-web-list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                    Volver
+                </a>
+                {% if cliente.activo %}
+                <form method="post" action="{% url 'cliente-web-deactivate' cliente.id_cliente %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
+                        Desactivar
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
