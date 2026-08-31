@@ -11,8 +11,12 @@
             </div>
             <div class="col-sm-6">
                 <ol class="breadcrumb float-sm-end mb-0">
-                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Clientes</li>
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'home' %}">Inicio</a>
+                    </li>
+                    <li class="breadcrumb-item active" aria-current="page">
+                        Clientes
+                    </li>
                 </ol>
             </div>
         </div>
@@ -20,50 +24,88 @@
 </div>
 {% endblock %}
 
+
 {% block content %}
+
 <div class="row g-3 mb-3">
+
     <div class="col-md-3 col-6">
         <div class="card h-100">
             <div class="card-body">
-                <p class="text-secondary small mb-1">Total de clientes</p>
-                <h3 class="mb-0 fw-bold">{{ total_clientes }}</h3>
+                <p class="text-secondary small mb-1">
+                    Total de clientes
+                </p>
+                <h3 class="mb-0 fw-bold">
+                    {{ total_clientes }}
+                </h3>
             </div>
         </div>
     </div>
+
     <div class="col-md-3 col-6">
         <div class="card h-100">
             <div class="card-body">
-                <p class="text-secondary small mb-1">Activos</p>
-                <h3 class="mb-0 fw-bold text-success">{{ clientes_activos }}</h3>
+                <p class="text-secondary small mb-1">
+                    Activos
+                </p>
+                <h3 class="mb-0 fw-bold text-success">
+                    {{ clientes_activos }}
+                </h3>
             </div>
         </div>
     </div>
+
     <div class="col-md-3 col-6">
         <div class="card h-100">
             <div class="card-body">
-                <p class="text-secondary small mb-1">Inactivos</p>
-                <h3 class="mb-0 fw-bold text-secondary">{{ clientes_inactivos }}</h3>
+                <p class="text-secondary small mb-1">
+                    Inactivos
+                </p>
+                <h3 class="mb-0 fw-bold text-secondary">
+                    {{ clientes_inactivos }}
+                </h3>
             </div>
         </div>
     </div>
+
     <div class="col-md-3 col-6">
         <div class="card h-100">
             <div class="card-body">
-                <p class="text-secondary small mb-1">Categorías usadas</p>
-                <h3 class="mb-0 fw-bold text-info">{{ categorias_count }}</h3>
+                <p class="text-secondary small mb-1">
+                    Categorías usadas
+                </p>
+                <h3 class="mb-0 fw-bold text-info">
+                    {{ categorias_count }}
+                </h3>
             </div>
         </div>
     </div>
+
 </div>
 
+
 <div class="card">
+
     <div class="card-header d-flex flex-wrap gap-2 align-items-center">
-        <h3 class="card-title mb-0 me-auto">Listado de clientes</h3>
-        <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
-            <div class="input-group input-group-sm" style="width: 16rem">
-                <span class="input-group-text">
+
+        <h3 class="card-title mb-0 me-auto">
+            Listado de clientes
+        </h3>
+
+        <form method="get"
+              class="d-flex flex-wrap gap-2 align-items-center">
+
+            <div class="input-group input-group-sm"
+                 style="width: 16rem">
+
+                <button
+                    class="btn btn-outline-secondary"
+                    type="submit"
+                    aria-label="Buscar"
+                >
                     <i class="bi bi-search" aria-hidden="true"></i>
-                </span>
+                </button>
+
                 <input
                     type="search"
                     name="q"
@@ -72,26 +114,118 @@
                     placeholder="Buscar por nombre o RUC"
                     aria-label="Buscar por nombre o RUC"
                 >
+
             </div>
-            <select name="estado" class="form-select form-select-sm" style="width: 10rem" aria-label="Filtrar por estado">
-                <option value="" {% if not estado %}selected{% endif %}>Todos</option>
-                <option value="activos" {% if estado == "activos" %}selected{% endif %}>Activos</option>
-                <option value="inactivos" {% if estado == "inactivos" %}selected{% endif %}>Inactivos</option>
+
+
+            <select
+                name="estado"
+                class="form-select form-select-sm"
+                style="width: 10rem"
+                aria-label="Filtrar por estado"
+            >
+                <option value=""
+                        {% if not estado %}selected{% endif %}>
+                    Todos
+                </option>
+
+                <option value="activos"
+                        {% if estado == "activos" %}selected{% endif %}>
+                    Activos
+                </option>
+
+                <option value="inactivos"
+                        {% if estado == "inactivos" %}selected{% endif %}>
+                    Inactivos
+                </option>
             </select>
-            <button class="btn btn-outline-secondary btn-sm" type="submit">
-                <i class="bi bi-funnel me-1" aria-hidden="true"></i>
+
+
+            <select
+                name="categoria"
+                class="form-select form-select-sm"
+                style="width: 12rem"
+                aria-label="Filtrar por categoría"
+            >
+                <option value=""
+                        {% if not categoria %}selected{% endif %}>
+                    Todas las categorías
+                </option>
+
+                <option value="MINORISTA"
+                        {% if categoria == "MINORISTA" %}selected{% endif %}>
+                    Minorista
+                </option>
+
+                <option value="CORPORATIVO"
+                        {% if categoria == "CORPORATIVO" %}selected{% endif %}>
+                    Corporativo
+                </option>
+
+                <option value="VIP"
+                        {% if categoria == "VIP" %}selected{% endif %}>
+                    VIP
+                </option>
+            </select>
+
+
+            <select
+                name="tipo"
+                class="form-select form-select-sm"
+                style="width: 10rem"
+                aria-label="Filtrar por tipo"
+            >
+                <option value=""
+                        {% if not tipo %}selected{% endif %}>
+                    Todos los tipos
+                </option>
+
+                <option value="FISICA"
+                        {% if tipo == "FISICA" %}selected{% endif %}>
+                    Persona física
+                </option>
+
+                <option value="JURIDICA"
+                        {% if tipo == "JURIDICA" %}selected{% endif %}>
+                    Persona jurídica
+                </option>
+            </select>
+
+
+            <button class="btn btn-outline-secondary btn-sm"
+                    type="submit">
+
+                <i class="bi bi-funnel me-1"
+                   aria-hidden="true"></i>
+
                 Filtrar
+
             </button>
+
         </form>
-        <a href="{% url 'cliente-web-create' %}" class="btn btn-primary btn-sm">
-            <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+
+
+        <a href="{% url 'cliente-web-create' %}"
+           class="btn btn-primary btn-sm">
+
+            <i class="bi bi-plus-lg me-1"
+               aria-hidden="true"></i>
+
             Nuevo cliente
+
         </a>
+
     </div>
+
+
     <div class="card-body p-0">
+
         {% if clientes %}
+
         <div class="table-responsive">
+
             <table class="table align-middle mb-0">
+
                 <thead>
                     <tr>
                         <th>Cliente</th>
@@ -99,84 +233,227 @@
                         <th>Categoría</th>
                         <th>Tipo</th>
                         <th>Estado</th>
-                        <th class="text-end">Acciones</th>
+                        <th class="text-end">
+                            Acciones
+                        </th>
                     </tr>
                 </thead>
+
                 <tbody>
+
                     {% for cliente in clientes %}
+
                     <tr>
+
                         <td>
-                            <a href="{% url 'cliente-web-detail' cliente.id_cliente %}" class="fw-semibold text-decoration-none">
+
+                            <a href="{% url 'cliente-web-detail' cliente.id_cliente %}"
+                               class="fw-semibold text-decoration-none">
+
                                 {{ cliente.nombre }}
+
                             </a>
-                            <div class="small text-secondary">ID {{ cliente.id_cliente }}</div>
-                        </td>
-                        <td class="text-nowrap">{{ cliente.ruc }}</td>
-                        <td>{{ cliente.get_categoria_display }}</td>
-                        <td>{{ cliente.get_tipo_display }}</td>
-                        <td>
-                            {% if cliente.activo %}
-                            <span class="badge text-bg-success">Activo</span>
-                            {% else %}
-                            <span class="badge text-bg-secondary">Inactivo</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-end">
-                            <div class="btn-group btn-group-sm" role="group" aria-label="Acciones de {{ cliente.nombre }}">
-                                <a class="btn btn-outline-secondary" href="{% url 'cliente-web-detail' cliente.id_cliente %}" title="Ver cliente">
-                                    <i class="bi bi-eye" aria-hidden="true"></i>
-                                </a>
-                                <a class="btn btn-outline-secondary" href="{% url 'cliente-web-update' cliente.id_cliente %}" title="Editar cliente">
-                                    <i class="bi bi-pencil" aria-hidden="true"></i>
-                                </a>
+
+                            <div class="small text-secondary">
+                                ID {{ cliente.id_cliente }}
                             </div>
+
                         </td>
+
+
+                        <td class="text-nowrap">
+                            {{ cliente.ruc }}
+                        </td>
+
+
+                        <td>
+                            {{ cliente.get_categoria_display }}
+                        </td>
+
+
+                        <td>
+                            {{ cliente.get_tipo_display }}
+                        </td>
+
+
+                        <td>
+
+                            {% if cliente.activo %}
+
+                            <span class="badge text-bg-success">
+                                Activo
+                            </span>
+
+                            {% else %}
+
+                            <span class="badge text-bg-secondary">
+                                Inactivo
+                            </span>
+
+                            {% endif %}
+
+                        </td>
+
+
+                        <td class="text-end">
+
+                            <div class="btn-group btn-group-sm"
+                                 role="group"
+                                 aria-label="Acciones de {{ cliente.nombre }}">
+
+                                <a class="btn btn-outline-secondary"
+                                   href="{% url 'cliente-web-detail' cliente.id_cliente %}"
+                                   title="Ver cliente">
+
+                                    <i class="bi bi-eye"
+                                       aria-hidden="true"></i>
+
+                                </a>
+
+                                <a class="btn btn-outline-secondary"
+                                   href="{% url 'cliente-web-update' cliente.id_cliente %}"
+                                   title="Editar cliente">
+
+                                    <i class="bi bi-pencil"
+                                       aria-hidden="true"></i>
+
+                                </a>
+
+                            </div>
+
+                        </td>
+
                     </tr>
+
                     {% endfor %}
+
                 </tbody>
+
             </table>
+
         </div>
+
+
         {% else %}
+
         <div class="p-4 text-center">
-            <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center mb-3" style="width: 4rem; height: 4rem;">
-                <i class="bi bi-people fs-3" aria-hidden="true"></i>
+
+            <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center mb-3"
+                 style="width: 4rem; height: 4rem;">
+
+                <i class="bi bi-people fs-3"
+                   aria-hidden="true"></i>
+
             </div>
-            <h4 class="h5 mb-1">No hay clientes para mostrar</h4>
-            <p class="text-secondary mb-3">Registrá el primer cliente para comenzar a operar.</p>
-            <a href="{% url 'cliente-web-create' %}" class="btn btn-primary">
-                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                Nuevo cliente
+
+            <h4 class="h5 mb-1">
+                No hay clientes para mostrar
+            </h4>
+
+            <p class="text-secondary mb-3">
+                No se encontraron clientes que coincidan con los criterios seleccionados.
+            </p>
+
+            <a href="{% url 'cliente-web-list' %}"
+               class="btn btn-outline-secondary me-2">
+
+                Limpiar filtros
+
             </a>
+
+            <a href="{% url 'cliente-web-create' %}"
+               class="btn btn-primary">
+
+                <i class="bi bi-plus-lg me-1"
+                   aria-hidden="true"></i>
+
+                Nuevo cliente
+
+            </a>
+
         </div>
+
         {% endif %}
+
     </div>
+
+
     {% if is_paginated %}
+
     <div class="card-footer d-flex justify-content-between align-items-center">
+
         <small class="text-secondary">
-            Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+
+            Página {{ page_obj.number }}
+            de {{ page_obj.paginator.num_pages }}
+
         </small>
+
+
         <nav aria-label="Paginación de clientes">
+
             <ul class="pagination pagination-sm mb-0">
+
                 <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+
                     {% if page_obj.has_previous %}
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if query %}&q={{ query }}{% endif %}{% if estado %}&estado={{ estado }}{% endif %}">Anterior</a>
+
+                    <a class="page-link"
+                       href="?page={{ page_obj.previous_page_number }}{% if query %}&q={{ query }}{% endif %}{% if estado %}&estado={{ estado }}{% endif %}{% if categoria %}&categoria={{ categoria }}{% endif %}{% if tipo %}&tipo={{ tipo }}{% endif %}">
+
+                        Anterior
+
+                    </a>
+
                     {% else %}
-                    <span class="page-link">Anterior</span>
+
+                    <span class="page-link">
+                        Anterior
+                    </span>
+
                     {% endif %}
+
                 </li>
+
+
                 <li class="page-item active">
-                    <span class="page-link">{{ page_obj.number }}</span>
+
+                    <span class="page-link">
+                        {{ page_obj.number }}
+                    </span>
+
                 </li>
+
+
                 <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+
                     {% if page_obj.has_next %}
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if query %}&q={{ query }}{% endif %}{% if estado %}&estado={{ estado }}{% endif %}">Siguiente</a>
+
+                    <a class="page-link"
+                       href="?page={{ page_obj.next_page_number }}{% if query %}&q={{ query }}{% endif %}{% if estado %}&estado={{ estado }}{% endif %}{% if categoria %}&categoria={{ categoria }}{% endif %}{% if tipo %}&tipo={{ tipo }}{% endif %}">
+
+                        Siguiente
+
+                    </a>
+
                     {% else %}
-                    <span class="page-link">Siguiente</span>
+
+                    <span class="page-link">
+                        Siguiente
+                    </span>
+
                     {% endif %}
+
                 </li>
+
             </ul>
+
         </nav>
+
     </div>
+
     {% endif %}
+
 </div>
+
 {% endblock %}

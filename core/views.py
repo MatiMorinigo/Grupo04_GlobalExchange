@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from django.urls import reverse
-
+from core.keycloak import tiene_rol
 from clientes.models import Cliente
 from usuarios.models import EstadoSolicitud, SolicitudAsociacion, UsuarioCliente
 
@@ -19,6 +19,7 @@ def home(request):
             "enabled": True,
             "action_label": "Ver Clientes",
             "disabled_reason": "",
+            "admin_only": True,
         },
         {
             "title": "Operaciones de cambio",
@@ -26,7 +27,7 @@ def home(request):
             "icon": "bi bi-arrow-left-right",
             "bg_class": "text-bg-success",
             "link_class": "link-light",
-            "status": "Próximamente",
+            "status": "No Disponible",
             "status_class": "text-bg-secondary",
             "enabled": False,
             "action_label": "Próximamente",
@@ -38,7 +39,7 @@ def home(request):
             "icon": "bi bi-graph-up-arrow",
             "bg_class": "text-bg-warning",
             "link_class": "link-dark",
-            "status": "Próximamente",
+            "status": "No Disponible",
             "status_class": "text-bg-secondary",
             "enabled": False,
             "action_label": "Próximamente",
@@ -50,11 +51,12 @@ def home(request):
             "icon": "bi bi-file-earmark-bar-graph-fill",
             "bg_class": "text-bg-danger",
             "link_class": "link-light",
-            "status": "Próximamente",
+            "status": "No Disponible",
             "status_class": "text-bg-secondary",
             "enabled": False,
             "action_label": "Próximamente",
             "disabled_reason": "Módulo aún no disponible.",
+            "admin_only": True,
         },
         {
             "title": "Usuarios",
@@ -62,11 +64,12 @@ def home(request):
             "icon": "bi bi-person-gear",
             "bg_class": "text-bg-info",
             "link_class": "link-dark",
-            "status": "Próximamente",
+            "status": "No Disponible",
             "status_class": "text-bg-secondary",
             "enabled": False,
             "action_label": "Próximamente",
             "disabled_reason": "Módulo aún no disponible.",
+            "admin_only": True,
         },
         {
             "title": "Configuración",
@@ -74,14 +77,20 @@ def home(request):
             "icon": "bi bi-sliders",
             "bg_class": "text-bg-secondary",
             "link_class": "link-light",
-            "status": "Próximamente",
+            "status": "No Disponible",
             "status_class": "text-bg-secondary",
             "enabled": False,
             "action_label": "Próximamente",
             "disabled_reason": "Módulo aún no disponible.",
+            "admin_only": True,
         },
     ]
-
+    if not tiene_rol(request, "administrador"):
+        modules = [
+            module
+            for module in modules
+            if not module.get("admin_only", False)
+        ]
     # Contexto de clientes asociados al usuario
     clientes_aprobados = []
     cliente_activo = None

@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
 from django.views.generic import ListView
-
+from core.keycloak import tiene_rol
 from clientes.models import Cliente
 
 from .models import EstadoSolicitud, SolicitudAsociacion, UsuarioCliente
@@ -19,7 +19,7 @@ from .models import EstadoSolicitud, SolicitudAsociacion, UsuarioCliente
 
 class AdminRequiredMixin(UserPassesTestMixin):
     def test_func(self):
-        return self.request.user.is_authenticated and (self.request.user.is_staff or self.request.user.is_superuser)
+        return tiene_rol(self.request, "administrador")
 
 
 # ─────────────────────────────────────────────

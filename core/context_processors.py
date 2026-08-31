@@ -1,5 +1,5 @@
 from django.conf import settings
-
+from core.keycloak import tiene_rol
 
 def app_environment(request):
     environment = getattr(settings, "APP_ENV", "Desarrollo")
@@ -7,5 +7,6 @@ def app_environment(request):
         environment = ""
 
     return {
+        "es_administrador": tiene_rol(request, "administrador"),
         "app_environment": environment,
     }

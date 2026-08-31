@@ -8,7 +8,7 @@ from rest_framework import generics, status
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from core.mixins import AdminRequiredMixin
 from .forms import ClienteForm
 from .models import Cliente
 from .permissions import EsAdministrador
@@ -84,7 +84,7 @@ class ClienteDeactivateView(APIView):
         )
 
 
-class ClienteWebListView(ListView):
+class ClienteWebListView(AdminRequiredMixin, ListView):
     model = Cliente
     template_name = "clientes/cliente_list.html"
     context_object_name = "clientes"
@@ -94,15 +94,24 @@ class ClienteWebListView(ListView):
         queryset = Cliente.objects.order_by("nombre")
         query = self.request.GET.get("q", "").strip()
         estado = self.request.GET.get("estado", "").strip()
+        categoria = self.request.GET.get("categoria", "").strip()
+        tipo = self.request.GET.get("tipo", "").strip()
 
         if query:
             queryset = queryset.filter(
                 Q(nombre__icontains=query) | Q(ruc__icontains=query)
             )
+
         if estado == "activos":
             queryset = queryset.filter(activo=True)
         elif estado == "inactivos":
             queryset = queryset.filter(activo=False)
+
+        if categoria:
+            queryset = queryset.filter(categoria=categoria)
+
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
 
         return queryset
 
@@ -117,12 +126,14 @@ class ClienteWebListView(ListView):
                 "clientes_activos": Cliente.objects.filter(activo=True).count(),
                 "clientes_inactivos": Cliente.objects.filter(activo=False).count(),
                 "categorias_count": Cliente.objects.values("categoria").distinct().count(),
+                "categoria": self.request.GET.get("categoria", "").strip(),
+                "tipo": self.request.GET.get("tipo", "").strip(),
             }
         )
         return context
 
 
-class ClienteWebCreateView(CreateView):
+class ClienteWebCreateView(AdminRequiredMixin, CreateView):
     model = Cliente
     form_class = ClienteForm
     template_name = "clientes/cliente_form.html"
@@ -144,7 +155,7 @@ class ClienteWebCreateView(CreateView):
         return context
 
 
-class ClienteWebDetailView(DetailView):
+class ClienteWebDetailView(AdminRequiredMixin,DetailView):
     model = Cliente
     template_name = "clientes/cliente_detail.html"
     context_object_name = "cliente"
@@ -156,7 +167,7 @@ class ClienteWebDetailView(DetailView):
         return context
 
 
-class ClienteWebUpdateView(UpdateView):
+class ClienteWebUpdateView(AdminRequiredMixin,UpdateView):
     model = Cliente
     form_class = ClienteForm
     template_name = "clientes/cliente_form.html"
@@ -181,7 +192,7 @@ class ClienteWebUpdateView(UpdateView):
         return context
 
 
-class ClienteWebDeactivateView(View):
+class ClienteWebDeactivateView(AdminRequiredMixin, View):
     def post(self, request, id_cliente):
         cliente = get_object_or_404(Cliente, id_cliente=id_cliente)
 
