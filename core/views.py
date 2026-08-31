@@ -87,7 +87,7 @@ def home(request):
     cliente_activo = None
     perfil = None
 
-    if request.user.is_authenticated:
+    if request.user.is_authenticated and request.user.pk is not None:
         clientes_aprobados = list(
             Cliente.objects.filter(
                 solicitudes_asociacion__usuario=request.user,
