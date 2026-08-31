@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Solicitar asociación | Global Exchange{% endblock %}
+
+{% block styles %}
+<style>
+    #resultado-busqueda {
+        transition: all .25s ease;
+    }
+    .ruc-found-card {
+        border-left: 4px solid var(--bs-primary);
+    }
+    .spinner-border {
+        width: 1.2rem;
+        height: 1.2rem;
+        border-width: .15em;
+    }
+</style>
+{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Solicitar asociación a cliente</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Solicitar asociación</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7 col-md-9">
+
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-person-check me-2" aria-hidden="true"></i>
+                    Buscar cliente por RUC
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-secondary mb-3">
+                    Ingresá el RUC del cliente con el que querés operar y confirmá el envío de la solicitud.
+                    El administrador la revisará y aprobará a la brevedad.
+                </p>
+
+                <div class="input-group mb-3">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input
+                        type="text"
+                        id="ruc-input"
+                        class="form-control form-control-lg"
+                        placeholder="Ej: 80123456-7"
+                        aria-label="RUC del cliente"
+                        autocomplete="off"
+                        maxlength="20"
+                    >
+                    <button class="btn btn-primary" id="btn-buscar" type="button">
+                        Buscar
+                    </button>
+                </div>
+
+                <div id="resultado-busqueda"></div>
+            </div>
+        </div>
+
+        <div class="text-end">
+            <a href="{% url 'mis-solicitudes' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-list-ul me-1" aria-hidden="true"></i>
+                Ver mis solicitudes
+            </a>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const btnBuscar = document.getElementById('btn-buscar');
+    const rucInput = document.getElementById('ruc-input');
+    const resultado = document.getElementById('resultado-busqueda');
+
+    function buscarCliente() {
+        const ruc = rucInput.value.trim();
+        if (!ruc) {
+            resultado.innerHTML = '<div class="alert alert-warning py-2"><i class="bi bi-exclamation-triangle me-2"></i>Ingresá un RUC para buscar.</div>';
+            return;
+        }
+
+        resultado.innerHTML = '<div class="d-flex align-items-center gap-2 text-secondary py-2"><span class="spinner-border" role="status" aria-hidden="true"></span> Buscando...</div>';
+
+        fetch(`?ruc=${encodeURIComponent(ruc)}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.found) {
+                resultado.innerHTML = `
+                    <div class="alert alert-danger py-2 mb-0">
+                        <i class="bi bi-x-circle me-2" aria-hidden="true"></i>
+                        No se encontró ningún cliente activo con el RUC <strong>${escapeHtml(ruc)}</strong>.
+                    </div>`;
+                return;
+            }
+
+            let accion = '';
+            if (data.ya_aprobado) {
+                accion = '<span class="badge text-bg-success fs-6 py-2 px-3"><i class="bi bi-check-circle me-1"></i> Ya estás asociado a este cliente</span>';
+            } else if (data.ya_solicitado) {
+                accion = '<span class="badge text-bg-warning fs-6 py-2 px-3"><i class="bi bi-clock me-1"></i> Ya tenés una solicitud pendiente</span>';
+            } else {
+                accion = `
+                    <form method="post" action="{% url 'solicitar-asociacion' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="id_cliente" value="${data.id_cliente}">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-send me-1" aria-hidden="true"></i>
+                            Confirmar solicitud
+                        </button>
+                    </form>`;
+            }
+
+            resultado.innerHTML = `
+                <div class="card ruc-found-card mb-0">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap gap-3 align-items-start justify-content-between">
+                            <div>
+                                <h5 class="mb-1">${escapeHtml(data.nombre)}</h5>
+                                <div class="small text-secondary mb-2">
+                                    <span class="me-3"><i class="bi bi-upc me-1"></i>RUC: ${escapeHtml(data.ruc)}</span>
+                                    <span class="me-3"><i class="bi bi-tag me-1"></i>${escapeHtml(data.categoria)}</span>
+                                    <span><i class="bi bi-person me-1"></i>${escapeHtml(data.tipo)}</span>
+                                </div>
+                            </div>
+                            <div>${accion}</div>
+                        </div>
+                    </div>
+                </div>`;
+        })
+        .catch(() => {
+            resultado.innerHTML = '<div class="alert alert-danger py-2 mb-0">Ocurrió un error al buscar. Intentá de nuevo.</div>';
+        });
+    }
+
+    btnBuscar.addEventListener('click', buscarCliente);
+    rucInput.addEventListener('keydown', e => { if (e.key === 'Enter') buscarCliente(); });
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+</script>
+{% endblock %}

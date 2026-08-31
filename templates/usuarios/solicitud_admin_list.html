@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block title %}Solicitudes de asociación | Admin | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Solicitudes de asociación</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Solicitudes</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# Resumen de pendientes #}
+{% if total_pendientes > 0 %}
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill fs-5" aria-hidden="true"></i>
+    <div>
+        Hay <strong>{{ total_pendientes }}</strong> solicitud{{ total_pendientes|pluralize:"es" }} pendiente{{ total_pendientes|pluralize:"s" }} de resolución.
+    </div>
+</div>
+{% endif %}
+
+{# Filtros de estado #}
+<div class="card mb-3">
+    <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
+        <span class="text-secondary small me-1">Filtrar por estado:</span>
+        <a href="?estado=PENDIENTE" class="btn btn-sm {% if estado_filtro == 'PENDIENTE' %}btn-warning{% else %}btn-outline-warning{% endif %}">
+            <i class="bi bi-clock me-1" aria-hidden="true"></i>Pendientes
+        </a>
+        <a href="?estado=APROBADA" class="btn btn-sm {% if estado_filtro == 'APROBADA' %}btn-success{% else %}btn-outline-success{% endif %}">
+            <i class="bi bi-check-circle me-1" aria-hidden="true"></i>Aprobadas
+        </a>
+        <a href="?estado=RECHAZADA" class="btn btn-sm {% if estado_filtro == 'RECHAZADA' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+            <i class="bi bi-x-circle me-1" aria-hidden="true"></i>Rechazadas
+        </a>
+        <a href="?estado=todas" class="btn btn-sm {% if estado_filtro == 'todas' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+            Todas
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if solicitudes %}
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Cliente</th>
+                        <th>RUC</th>
+                        <th>Estado</th>
+                        <th>Fecha solicitud</th>
+                        <th>Resuelta</th>
+                        {% if estado_filtro == "PENDIENTE" %}<th class="text-end">Acciones</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in solicitudes %}
+                    <tr>
+                        <td>
+                            <span class="fw-semibold">{{ s.usuario.get_full_name|default:s.usuario.username }}</span>
+                            <div class="small text-secondary">{{ s.usuario.email }}</div>
+                        </td>
+                        <td>
+                            <span class="fw-semibold">{{ s.cliente.nombre }}</span>
+                            <div class="small text-secondary">{{ s.cliente.get_categoria_display }}</div>
+                        </td>
+                        <td class="text-nowrap">{{ s.cliente.ruc }}</td>
+                        <td>
+                            {% if s.estado == "PENDIENTE" %}
+                            <span class="badge text-bg-warning">
+                                <i class="bi bi-clock me-1" aria-hidden="true"></i>Pendiente
+                            </span>
+                            {% elif s.estado == "APROBADA" %}
+                            <span class="badge text-bg-success">
+                                <i class="bi bi-check-circle me-1" aria-hidden="true"></i>Aprobada
+                            </span>
+                            {% else %}
+                            <span class="badge text-bg-danger">
+                                <i class="bi bi-x-circle me-1" aria-hidden="true"></i>Rechazada
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-nowrap small">{{ s.fecha_solicitud|date:"d/m/Y H:i" }}</td>
+                        <td class="text-nowrap small text-secondary">
+                            {% if s.fecha_resolucion %}
+                                {{ s.fecha_resolucion|date:"d/m/Y H:i" }}
+                                {% if s.resuelto_por %}
+                                <div class="small">por {{ s.resuelto_por.get_full_name|default:s.resuelto_por.username }}</div>
+                                {% endif %}
+                            {% else %}
+                                <span>—</span>
+                            {% endif %}
+                        </td>
+                        {% if estado_filtro == "PENDIENTE" %}
+                        <td class="text-end">
+                            <div class="d-flex gap-1 justify-content-end">
+                                {# Botón Aprobar #}
+                                <button
+                                    type="button"
+                                    class="btn btn-success btn-sm"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modal-aprobar-{{ s.pk }}"
+                                    title="Aprobar solicitud"
+                                >
+                                    <i class="bi bi-check-lg me-1" aria-hidden="true"></i>Aprobar
+                                </button>
+                                {# Botón Rechazar #}
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-danger btn-sm"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modal-rechazar-{{ s.pk }}"
+                                    title="Rechazar solicitud"
+                                >
+                                    <i class="bi bi-x-lg me-1" aria-hidden="true"></i>Rechazar
+                                </button>
+                            </div>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-5 text-center">
+            <div class="rounded-circle bg-success-subtle text-success d-inline-flex align-items-center justify-content-center mb-3" style="width: 4rem; height: 4rem;">
+                <i class="bi bi-check-all fs-3" aria-hidden="true"></i>
+            </div>
+            <h4 class="h5 mb-1">Sin solicitudes</h4>
+            <p class="text-secondary mb-0">No hay solicitudes con el filtro seleccionado.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if is_paginated %}
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <small class="text-secondary">
+            Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+        </small>
+        <nav aria-label="Paginación de solicitudes">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                    {% if page_obj.has_previous %}
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}&estado={{ estado_filtro }}">Anterior</a>
+                    {% else %}
+                    <span class="page-link">Anterior</span>
+                    {% endif %}
+                </li>
+                <li class="page-item active"><span class="page-link">{{ page_obj.number }}</span></li>
+                <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                    {% if page_obj.has_next %}
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}&estado={{ estado_filtro }}">Siguiente</a>
+                    {% else %}
+                    <span class="page-link">Siguiente</span>
+                    {% endif %}
+                </li>
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+{# Modales de confirmación #}
+{% for s in solicitudes %}
+{% if s.estado == "PENDIENTE" %}
+
+{# Modal Aprobar #}
+<div class="modal fade" id="modal-aprobar-{{ s.pk }}" tabindex="-1" aria-labelledby="modal-aprobar-label-{{ s.pk }}" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title" id="modal-aprobar-label-{{ s.pk }}">
+                    <i class="bi bi-check-circle-fill text-success me-2" aria-hidden="true"></i>
+                    Confirmar aprobación
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Confirmás la asociación de:</p>
+                <ul>
+                    <li><strong>Usuario:</strong> {{ s.usuario.get_full_name|default:s.usuario.username }}</li>
+                    <li><strong>Cliente:</strong> {{ s.cliente.nombre }} (RUC: {{ s.cliente.ruc }})</li>
+                </ul>
+                <p class="mb-0">Una vez aprobada, el usuario podrá operar con este cliente.</p>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="{% url 'admin-solicitud-aprobar' s.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
+                        Aprobar solicitud
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Modal Rechazar #}
+<div class="modal fade" id="modal-rechazar-{{ s.pk }}" tabindex="-1" aria-labelledby="modal-rechazar-label-{{ s.pk }}" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title" id="modal-rechazar-label-{{ s.pk }}">
+                    <i class="bi bi-x-circle-fill text-danger me-2" aria-hidden="true"></i>
+                    Confirmar rechazo
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Rechazás la solicitud de:</p>
+                <ul>
+                    <li><strong>Usuario:</strong> {{ s.usuario.get_full_name|default:s.usuario.username }}</li>
+                    <li><strong>Cliente:</strong> {{ s.cliente.nombre }} (RUC: {{ s.cliente.ruc }})</li>
+                </ul>
+                <p class="mb-0 text-secondary small">La solicitud quedará registrada como rechazada. El usuario podrá volver a solicitarla.</p>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="{% url 'admin-solicitud-rechazar' s.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-x-lg me-1" aria-hidden="true"></i>
+                        Rechazar solicitud
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endfor %}
+
+{% endblock %}

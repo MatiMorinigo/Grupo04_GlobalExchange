@@ -1,8 +1,6 @@
-# Entorno virtual
-venv/
-
 # Variables de entorno
 .env
+*.env.local
 
 # Python
 __pycache__/
@@ -21,13 +19,8 @@ media/
 .vscode/
 
 # Docker
-*.env.local# Variables de entorno
-.env
-
-# Python cache
-__pycache__/
-*.py[cod]
 
 # Entorno virtual
 .venv/
 venv/
+.venv*/
