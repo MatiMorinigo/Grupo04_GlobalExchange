@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.models import AnonymousUser, User
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.template.loader import render_to_string
-from django.test import RequestFactory, SimpleTestCase, override_settings
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import resolve, reverse
 
 from core.context_processors import app_environment
@@ -102,3 +102,31 @@ class HomeViewTests(SimpleTestCase):
 
         self.assertIn("alert-danger", content)
         self.assertIn("Error visible", content)
+
+
+class LogoutViewTests(TestCase):
+    @override_settings(
+        OIDC_RP_CLIENT_ID="global-exchange-web",
+        OIDC_OP_AUTHORIZATION_ENDPOINT=(
+            "http://localhost:8080/realms/global-exchange/protocol/openid-connect/auth"
+        ),
+        OIDC_OP_LOGOUT_ENDPOINT=None,
+    )
+    def test_oidc_logout_get_logs_out_and_redirects_to_keycloak_logout(self):
+        user = User.objects.create_user(username="jperez")
+        self.client.force_login(user)
+        session = self.client.session
+        session["oidc_id_token"] = "id-token-demo"
+        session.save()
+
+        response = self.client.get(reverse("oidc_logout"), HTTP_HOST="localhost:8000")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(
+            "http://localhost:8080/realms/global-exchange/protocol/openid-connect/logout",
+            response["Location"],
+        )
+        self.assertIn("client_id=global-exchange-web", response["Location"])
+        self.assertIn("post_logout_redirect_uri=http%3A%2F%2Flocalhost%3A8000%2F", response["Location"])
+        self.assertIn("id_token_hint=id-token-demo", response["Location"])
+        self.assertNotIn("_auth_user_id", self.client.session)
