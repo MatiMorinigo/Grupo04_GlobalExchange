@@ -11,22 +11,45 @@ from rest_framework.views import APIView
 
 from .forms import ClienteForm
 from .models import Cliente
+from .permissions import EsAdministrador
 from .serializers import ClienteSerializer
-
 
 class ClienteCreateView(generics.CreateAPIView):
     queryset = Cliente.objects.all()
     serializer_class = ClienteSerializer
+    permission_classes = [EsAdministrador]
+
 
 
 class ClienteListView(generics.ListAPIView):
-    queryset = Cliente.objects.all()
     serializer_class = ClienteSerializer
+    permission_classes = [EsAdministrador]
+
+    def get_queryset(self):
+        queryset = Cliente.objects.all()
+
+        categoria = self.request.query_params.get("categoria")
+        tipo = self.request.query_params.get("tipo")
+        activo = self.request.query_params.get("activo")
+
+        if categoria:
+            queryset = queryset.filter(categoria=categoria)
+
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
+
+        if activo is not None:
+            queryset = queryset.filter(
+                activo=activo.lower() == "true"
+            )
+
+        return queryset
 
 
 class ClienteDetailView(generics.RetrieveUpdateAPIView):
     queryset = Cliente.objects.all()
     serializer_class = ClienteSerializer
+    permission_classes = [EsAdministrador]
     lookup_field = "id_cliente"
 
     def get_object(self):
@@ -39,7 +62,7 @@ class ClienteDetailView(generics.RetrieveUpdateAPIView):
 
 
 class ClienteDeactivateView(APIView):
-
+    permission_classes = [EsAdministrador]
     def patch(self, request, id_cliente):
         try:
             cliente = Cliente.objects.get(id_cliente=id_cliente)

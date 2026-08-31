@@ -3,7 +3,6 @@ import os
 
 from dotenv import load_dotenv
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
@@ -95,6 +94,8 @@ OIDC_OP_AUTHORIZATION_ENDPOINT = os.getenv("OIDC_OP_AUTHORIZATION_ENDPOINT")
 OIDC_OP_TOKEN_ENDPOINT = os.getenv("OIDC_OP_TOKEN_ENDPOINT")
 OIDC_OP_USER_ENDPOINT = os.getenv("OIDC_OP_USER_ENDPOINT")
 OIDC_OP_JWKS_ENDPOINT = os.getenv("OIDC_OP_JWKS_ENDPOINT")
+OIDC_STORE_ACCESS_TOKEN = True
+OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 240
 
 # Redireccionamiento despues del login/logout
 LOGIN_REDIRECT_URL = "/"
