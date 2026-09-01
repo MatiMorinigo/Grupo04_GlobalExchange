@@ -1,6 +1,9 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import Moneda, TasaCambio
+from .services import SimulacionConversionError, simular_conversion
 
 
 class MonedaSerializer(serializers.ModelSerializer):
@@ -38,3 +41,27 @@ class TasaCambioSerializer(serializers.ModelSerializer):
     def get_variacion_venta(self, obj):
         variacion = obj.variacion_venta()
         return None if variacion is None else str(variacion)
+
+
+class SimulacionConversionSerializer(serializers.Serializer):
+    moneda_origen = serializers.CharField(max_length=3)
+    moneda_destino = serializers.CharField(max_length=3)
+    monto = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
+
+    def validate_moneda_origen(self, value):
+        codigo = value.upper()
+        if not Moneda.objects.filter(codigo=codigo, activa=True).exists():
+            raise serializers.ValidationError("La moneda de origen no está disponible.")
+        return codigo
+
+    def validate_moneda_destino(self, value):
+        codigo = value.upper()
+        if not Moneda.objects.filter(codigo=codigo, activa=True).exists():
+            raise serializers.ValidationError("La moneda de destino no está disponible.")
+        return codigo
+
+    def create(self, validated_data):
+        try:
+            return simular_conversion(**validated_data)
+        except SimulacionConversionError as exc:
+            raise serializers.ValidationError({"detail": str(exc)}) from exc
