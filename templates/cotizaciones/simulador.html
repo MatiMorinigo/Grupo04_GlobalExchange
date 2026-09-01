@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}Simulador de conversión | Global Exchange{% endblock %}
+
+{% block styles %}
+<style>
+    .simulation-amount {
+        font-variant-numeric: tabular-nums;
+    }
+</style>
+{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Simulador de conversión</h3>
+            </div>
+
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'home' %}">Inicio</a>
+                    </li>
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'cotizacion-web-list' %}">Cotizaciones</a>
+                    </li>
+                    <li class="breadcrumb-item active" aria-current="page">
+                        Simulador
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="row g-3">
+
+    <div class="col-lg-5">
+
+        <div class="card">
+
+            <div class="card-header">
+                <h3 class="card-title mb-0">
+                    Datos de la conversión
+                </h3>
+            </div>
+
+            <form method="post" novalidate>
+                {% csrf_token %}
+
+                <div class="card-body">
+
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-warning" role="alert">
+                        {{ form.non_field_errors }}
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <label for="{{ form.moneda_origen.id_for_label }}" class="form-label">
+                            {{ form.moneda_origen.label }}
+                        </label>
+                        {{ form.moneda_origen }}
+                        {% for error in form.moneda_origen.errors %}
+                        <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.moneda_destino.id_for_label }}" class="form-label">
+                            {{ form.moneda_destino.label }}
+                        </label>
+                        {{ form.moneda_destino }}
+                        {% for error in form.moneda_destino.errors %}
+                        <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                    <div>
+                        <label for="{{ form.monto.id_for_label }}" class="form-label">
+                            {{ form.monto.label }}
+                        </label>
+                        {{ form.monto }}
+                        {% for error in form.monto.errors %}
+                        <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+
+                </div>
+
+                <div class="card-footer d-flex justify-content-between gap-2">
+                    <a href="{% url 'cotizacion-web-list' %}" class="btn btn-outline-secondary">
+                        Volver
+                    </a>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-calculator me-1" aria-hidden="true"></i>
+                        Simular
+                    </button>
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <div class="col-lg-7">
+
+        <div class="card h-100">
+
+            <div class="card-header">
+                <h3 class="card-title mb-0">
+                    Resultado
+                </h3>
+            </div>
+
+            <div class="card-body">
+
+                {% if resultado %}
+
+                <div class="row g-3">
+
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <p class="text-secondary small mb-1">Monto ingresado</p>
+                            <h4 class="mb-0 simulation-amount">
+                                {{ resultado.moneda_origen }} {{ resultado.monto_origen|floatformat:2 }}
+                            </h4>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <p class="text-secondary small mb-1">Total estimado a recibir</p>
+                            <h4 class="mb-0 text-success simulation-amount">
+                                {{ resultado.moneda_destino }}
+                                {% if resultado.moneda_destino == "PYG" %}
+                                    {{ resultado.total_final|floatformat:0 }}
+                                {% else %}
+                                    {{ resultado.total_final|floatformat:2 }}
+                                {% endif %}
+                            </h4>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm align-middle mb-0">
+                        <tbody>
+                            <tr>
+                                <th scope="row">Par de tasa usado</th>
+                                <td>{{ resultado.par_tasa }}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Tipo de tasa aplicada</th>
+                                <td>{{ resultado.tipo_tasa|capfirst }}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Tasa aplicada</th>
+                                <td class="simulation-amount">{{ resultado.tasa_aplicada|floatformat:4 }}</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Subtotal</th>
+                                <td class="simulation-amount">
+                                    {{ resultado.moneda_destino }}
+                                    {% if resultado.moneda_destino == "PYG" %}
+                                        {{ resultado.subtotal|floatformat:0 }}
+                                    {% else %}
+                                        {{ resultado.subtotal|floatformat:2 }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Descuento aplicado</th>
+                                <td class="simulation-amount">
+                                    {{ resultado.descuento_porcentaje|floatformat:2 }}%
+                                    · {{ resultado.moneda_destino }} {{ resultado.descuento_monto|floatformat:2 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Vigencia de la tasa</th>
+                                <td>{{ resultado.fecha_vigencia|date:"d/m/Y H:i" }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="alert alert-info mt-3 mb-0" role="alert">
+                    {{ resultado.mensaje_descuento }}
+                </div>
+
+                {% else %}
+
+                <div class="text-center py-5">
+                    <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center mb-3"
+                         style="width: 4rem; height: 4rem;">
+                        <i class="bi bi-calculator fs-3" aria-hidden="true"></i>
+                    </div>
+                    <h4 class="h5 mb-1">Sin simulación calculada</h4>
+                    <p class="text-secondary mb-0">
+                        Ingresá un monto y seleccioná las monedas para consultar el resultado estimado.
+                    </p>
+                </div>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

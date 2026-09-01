@@ -1,10 +1,14 @@
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
-from django.views.generic import ListView
-from rest_framework import generics
+from django.views.generic import FormView, ListView
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from .forms import SimulacionConversionForm
 from .models import Moneda, TasaCambio
-from .serializers import MonedaSerializer, TasaCambioSerializer
+from .serializers import MonedaSerializer, SimulacionConversionSerializer, TasaCambioSerializer
+from .services import SimulacionConversionError, simular_conversion
 
 
 class MonedaListView(generics.ListAPIView):
@@ -52,6 +56,14 @@ class TasaCambioParVigenteView(generics.RetrieveAPIView):
         )
 
 
+class SimulacionConversionApiView(APIView):
+    def post(self, request):
+        serializer = SimulacionConversionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        resultado = serializer.save()
+        return Response(resultado, status=status.HTTP_200_OK)
+
+
 class CotizacionWebListView(ListView):
     model = TasaCambio
     template_name = "cotizaciones/tasa_list.html"
@@ -90,3 +102,31 @@ class CotizacionWebListView(ListView):
             }
         )
         return context
+
+
+class SimulacionConversionWebView(FormView):
+    template_name = "cotizaciones/simulador.html"
+    form_class = SimulacionConversionForm
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cotizaciones"
+        return context
+
+    def form_valid(self, form):
+        try:
+            resultado = simular_conversion(
+                form.cleaned_data["moneda_origen"].codigo,
+                form.cleaned_data["moneda_destino"].codigo,
+                form.cleaned_data["monto"],
+            )
+        except SimulacionConversionError as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
+
+        return self.render_to_response(
+            self.get_context_data(
+                form=form,
+                resultado=resultado,
+            )
+        )
