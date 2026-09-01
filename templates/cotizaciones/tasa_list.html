@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}Cotizaciones | Global Exchange{% endblock %}
+
+{% block styles %}
+<style>
+    .rate-value {
+        font-variant-numeric: tabular-nums;
+    }
+
+    .rate-pair {
+        min-width: 6rem;
+    }
+</style>
+{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Cotizaciones</h3>
+            </div>
+
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'home' %}">Inicio</a>
+                    </li>
+                    <li class="breadcrumb-item active" aria-current="page">
+                        Cotizaciones
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="row g-3 mb-3">
+
+    <div class="col-md-4 col-12">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-secondary small mb-1">
+                    Tasas vigentes
+                </p>
+                <h3 class="mb-0 fw-bold">
+                    {{ total_tasas }}
+                </h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4 col-12">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-secondary small mb-1">
+                    Monedas admitidas
+                </p>
+                <h3 class="mb-0 fw-bold text-info">
+                    {{ monedas|length }}
+                </h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4 col-12">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-secondary small mb-1">
+                    Variaciones detectadas
+                </p>
+                <h3 class="mb-0 fw-bold {% if variaciones_count %}text-warning{% else %}text-secondary{% endif %}">
+                    {{ variaciones_count }}
+                </h3>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+<div class="card">
+
+    <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+
+        <h3 class="card-title mb-0 me-auto">
+            Tasas de cambio vigentes
+        </h3>
+
+        <form method="get"
+              class="d-flex flex-wrap gap-2 align-items-center">
+
+            <select
+                name="moneda"
+                class="form-select form-select-sm"
+                style="width: 13rem"
+                aria-label="Filtrar por moneda de origen"
+            >
+                <option value="" {% if not moneda %}selected{% endif %}>
+                    Todas las monedas
+                </option>
+
+                {% for item in monedas %}
+                <option value="{{ item.codigo }}" {% if moneda == item.codigo %}selected{% endif %}>
+                    {{ item.codigo }} - {{ item.nombre }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <button class="btn btn-outline-secondary btn-sm"
+                    type="submit">
+
+                <i class="bi bi-funnel me-1"
+                   aria-hidden="true"></i>
+
+                Filtrar
+
+            </button>
+
+            <a href="{% url 'cotizacion-web-list' %}"
+               class="btn btn-outline-primary btn-sm">
+
+                <i class="bi bi-arrow-clockwise me-1"
+                   aria-hidden="true"></i>
+
+                Actualizar
+
+            </a>
+
+        </form>
+
+    </div>
+
+
+    <div class="card-body p-0">
+
+        {% if tasas %}
+
+        <div class="table-responsive">
+
+            <table class="table align-middle mb-0">
+
+                <thead>
+                    <tr>
+                        <th>Par</th>
+                        <th>Moneda origen</th>
+                        <th>Moneda destino</th>
+                        <th class="text-end">Compra</th>
+                        <th class="text-end">Venta</th>
+                        <th>Variación</th>
+                        <th class="text-end">Actualización</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for tasa in tasas %}
+
+                    <tr>
+
+                        <td class="rate-pair">
+                            <span class="fw-semibold">
+                                {{ tasa.moneda_origen.codigo }}/{{ tasa.moneda_destino.codigo }}
+                            </span>
+                        </td>
+
+                        <td>
+                            <span class="fw-semibold">{{ tasa.moneda_origen.codigo }}</span>
+                            <div class="small text-secondary">
+                                {{ tasa.moneda_origen.nombre }}
+                            </div>
+                        </td>
+
+                        <td>
+                            <span class="fw-semibold">{{ tasa.moneda_destino.codigo }}</span>
+                            <div class="small text-secondary">
+                                {{ tasa.moneda_destino.nombre }}
+                            </div>
+                        </td>
+
+                        <td class="text-end rate-value">
+                            {{ tasa.moneda_destino.simbolo }} {{ tasa.precio_compra|floatformat:0 }}
+                        </td>
+
+                        <td class="text-end rate-value">
+                            {{ tasa.moneda_destino.simbolo }} {{ tasa.precio_venta|floatformat:0 }}
+                        </td>
+
+                        <td>
+                            {% with variacion=tasa.variacion_venta %}
+                                {% if variacion > 0 %}
+                                <span class="badge text-bg-success">
+                                    <i class="bi bi-arrow-up-short" aria-hidden="true"></i>
+                                    Subió
+                                </span>
+                                {% elif variacion < 0 %}
+                                <span class="badge text-bg-danger">
+                                    <i class="bi bi-arrow-down-short" aria-hidden="true"></i>
+                                    Bajó
+                                </span>
+                                {% elif variacion == 0 %}
+                                <span class="badge text-bg-secondary">
+                                    Sin cambios
+                                </span>
+                                {% else %}
+                                <span class="badge text-bg-secondary">
+                                    Sin historial
+                                </span>
+                                {% endif %}
+                            {% endwith %}
+                        </td>
+
+                        <td class="text-end text-secondary small">
+                            {{ tasa.fecha_vigencia|date:"d/m/Y H:i" }}
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+        {% else %}
+
+        <div class="p-4 text-center">
+
+            <div class="rounded-circle bg-warning-subtle text-warning d-inline-flex align-items-center justify-content-center mb-3"
+                 style="width: 4rem; height: 4rem;">
+
+                <i class="bi bi-graph-up-arrow fs-3"
+                   aria-hidden="true"></i>
+
+            </div>
+
+            <h4 class="h5 mb-1">
+                No hay tasas vigentes para mostrar
+            </h4>
+
+            <p class="text-secondary mb-3">
+                Cuando se registren tasas de cambio vigentes, aparecerán en esta tabla.
+            </p>
+
+            <a href="{% url 'cotizacion-web-list' %}"
+               class="btn btn-outline-secondary">
+
+                Limpiar filtros
+
+            </a>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+
+    <div class="card-footer d-flex flex-wrap justify-content-between gap-2">
+        <small class="text-secondary">
+            Monedas disponibles: PYG, USD, BRL y EUR.
+        </small>
+        <small class="text-secondary">
+            {% if ultima_actualizacion %}
+            Última actualización: {{ ultima_actualizacion|date:"d/m/Y H:i" }}
+            {% else %}
+            Sin tasas registradas.
+            {% endif %}
+        </small>
+    </div>
+
+</div>
+
+{% endblock %}
