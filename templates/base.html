@@ -276,16 +276,14 @@
 
                     <li class="nav-item">
 
-                        <span class="nav-link disabled text-body-secondary"
-                              aria-disabled="true"
-                              data-bs-toggle="tooltip"
-                              data-bs-title="Módulo aún no disponible">
+                        <a href="{% url 'cotizacion-web-list' %}"
+                           class="nav-link {% if active_menu == 'cotizaciones' %}active{% endif %}">
 
                             <i class="nav-icon bi bi-graph-up-arrow"></i>
 
                             <p>Cotizaciones</p>
 
-                        </span>
+                        </a>
 
                     </li>
 

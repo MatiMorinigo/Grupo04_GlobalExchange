@@ -7,6 +7,6 @@ def app_environment(request):
         environment = ""
 
     return {
-        "es_administrador": tiene_rol(request, "administrador"),
+        "es_administrador": tiene_rol(request, "administrador") if request else False,
         "app_environment": environment,
     }
