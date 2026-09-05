@@ -4,7 +4,14 @@ from .models import CategoriaCliente, Cliente, TipoCliente
 
 
 class ClienteForm(forms.ModelForm):
+    """Permite crear y editar clientes mediante la interfaz web.
+
+    Incluye RUC, nombre, categoría y tipo de persona. Utiliza la validación
+    del modelo y mensajes de error personalizados.
+    """
     class Meta:
+        """Configura los campos y la presentación del formulario de clientes.
+        """
         model = Cliente
         fields = ["ruc", "nombre", "categoria", "tipo"]
         labels = {

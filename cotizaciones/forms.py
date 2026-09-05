@@ -4,6 +4,7 @@ from .models import Moneda
 
 
 class SimulacionConversionForm(forms.Form):
+    """Recoge las monedas activas y el monto para simular una conversión."""
     moneda_origen = forms.ModelChoiceField(
         queryset=Moneda.objects.none(),
         to_field_name="codigo",
@@ -42,12 +43,27 @@ class SimulacionConversionForm(forms.Form):
     )
 
     def __init__(self, *args, **kwargs):
+        """Inicializa el formulario y carga las monedas activas ordenadas por código.
+
+        Args:
+            *args: Argumentos posicionales del formulario base de Django.
+            **kwargs: Opciones del formulario base, como datos e iniciales.
+        """
         super().__init__(*args, **kwargs)
         monedas = Moneda.objects.filter(activa=True).order_by("codigo")
         self.fields["moneda_origen"].queryset = monedas
         self.fields["moneda_destino"].queryset = monedas
 
     def clean(self):
+        """Comprueba que las monedas seleccionadas sean distintas.
+
+        Returns:
+            dict: Datos limpiados del formulario.
+
+        Raises:
+            django.forms.ValidationError: Si ambas monedas están presentes
+                y sus códigos coinciden.
+        """
         cleaned_data = super().clean()
         origen = cleaned_data.get("moneda_origen")
         destino = cleaned_data.get("moneda_destino")

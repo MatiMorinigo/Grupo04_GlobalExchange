@@ -5,21 +5,33 @@ from django.utils import timezone
 
 
 class Moneda(models.Model):
+    """Representa una moneda identificada por su código, con nombre, símbolo y estado."""
     codigo = models.CharField(max_length=3, primary_key=True)
     nombre = models.CharField(max_length=80)
     simbolo = models.CharField(max_length=8)
     activa = models.BooleanField(default=True)
 
     class Meta:
+        """Define el orden por código y los nombres de presentación de las monedas."""
         ordering = ["codigo"]
         verbose_name = "Moneda"
         verbose_name_plural = "Monedas"
 
     def __str__(self):
+        """Devuelve una etiqueta legible de la moneda.
+
+        Returns:
+            str: Código y nombre de la moneda separados por un guion.
+        """
         return f"{self.codigo} - {self.nombre}"
 
 
 class TasaCambio(models.Model):
+    """Almacena los precios de compra y venta de un par de monedas.
+
+    Registra la vigencia de la tasa y sus fechas. Las restricciones exigen
+    monedas distintas y una única tasa marcada como vigente por cada par.
+    """
     id_tasa = models.BigAutoField(primary_key=True)
     moneda_origen = models.ForeignKey(
         Moneda,
@@ -39,6 +51,7 @@ class TasaCambio(models.Model):
     actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Define el orden, los nombres y las restricciones del par de monedas."""
         ordering = ["moneda_origen__codigo", "moneda_destino__codigo"]
         verbose_name = "Tasa de cambio"
         verbose_name_plural = "Tasas de cambio"
@@ -55,13 +68,36 @@ class TasaCambio(models.Model):
         ]
 
     def clean(self):
+        """Valida que las monedas de origen y destino sean distintas.
+
+        Returns:
+            None: La validación finaliza sin errores.
+
+        Raises:
+            django.core.exceptions.ValidationError: Si coinciden los
+                identificadores de las monedas de origen y destino.
+        """
         if self.moneda_origen_id == self.moneda_destino_id:
             raise ValidationError("La moneda de origen y destino deben ser distintas.")
 
     def __str__(self):
+        """Devuelve el par de monedas representado por la tasa.
+
+        Returns:
+            str: Códigos de origen y destino separados por una barra.
+        """
         return f"{self.moneda_origen_id}/{self.moneda_destino_id}"
 
     def tasa_anterior(self):
+        """Busca la tasa inmediatamente anterior del mismo par de monedas.
+
+        Considera fechas estrictamente anteriores, excluye el registro actual
+        y no restringe la búsqueda al estado vigente.
+
+        Returns:
+            TasaCambio or None: Tasa más reciente anterior a esta, o None si no
+            hay antecedentes o la instancia no tiene fecha de vigencia.
+        """
         if not self.fecha_vigencia:
             return None
 
@@ -77,12 +113,24 @@ class TasaCambio(models.Model):
         )
 
     def variacion_compra(self):
+        """Calcula la diferencia de compra respecto de la tasa anterior.
+
+        Returns:
+            decimal.Decimal or None: Precio de compra actual menos el anterior,
+            o None si no hay una tasa previa.
+        """
         anterior = self.tasa_anterior()
         if not anterior:
             return None
         return self.precio_compra - anterior.precio_compra
 
     def variacion_venta(self):
+        """Calcula la diferencia de venta respecto de la tasa anterior.
+
+        Returns:
+            decimal.Decimal or None: Precio de venta actual menos el anterior,
+            o None si no hay una tasa previa.
+        """
         anterior = self.tasa_anterior()
         if not anterior:
             return None

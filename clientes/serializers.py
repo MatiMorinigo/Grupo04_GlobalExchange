@@ -4,6 +4,11 @@ from .models import Cliente
 
 
 class ClienteSerializer(serializers.ModelSerializer):
+    """Valida y serializa los datos de clientes para la API.
+
+    Comprueba la unicidad del RUC y personaliza los mensajes de validación.
+    El identificador y el estado activo son campos de solo lectura.
+    """
     ruc = serializers.CharField(
         max_length=20,
         validators=[
@@ -18,6 +23,8 @@ class ClienteSerializer(serializers.ModelSerializer):
         }
     )
     class Meta:
+        """Configura el modelo, los campos y los mensajes del serializador.
+        """
         model = Cliente
         fields = [
             "id_cliente",
