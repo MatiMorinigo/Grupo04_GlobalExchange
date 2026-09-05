@@ -1,5 +1,3 @@
-import re
-
 from django.contrib import messages
 from django.contrib.auth.models import AnonymousUser, User
 from django.contrib.messages.storage.fallback import FallbackStorage
@@ -59,33 +57,32 @@ class HomeViewTests(SimpleTestCase):
         self.assertEqual(resolve("/oidc/authenticate/").url_name, "oidc_authentication_init")
         self.assertEqual(resolve("/oidc/logout/").url_name, "oidc_logout")
 
-    def test_clients_is_the_only_functional_module_card_link(self):
+    def test_cotizaciones_is_available_for_anonymous_users(self):
         response = self.render_home(AnonymousUser())
         content = response.content.decode("utf-8")
-        module_links = re.findall(r'<a href="([^"]+)" class="small-box-footer', content)
 
-        self.assertEqual(module_links, [reverse("cliente-web-list")])
-        self.assertIn("Ver Clientes", content)
+        self.assertIn(reverse("cotizacion-web-list"), content)
+        self.assertIn("Ver Cotizaciones", content)
+        self.assertNotIn(reverse("cliente-web-list"), content)
 
     def test_upcoming_modules_are_not_keyboard_links(self):
         response = self.render_home(AnonymousUser())
         content = response.content.decode("utf-8")
 
-        disabled_cards = re.findall(r'<div class="small-box [^"]*module-card-disabled', content)
-
-        self.assertEqual(len(disabled_cards), 5)
-        self.assertEqual(content.count('<span class="small-box-footer'), 5)
-        self.assertEqual(content.count('aria-disabled="true"'), 10)
+        self.assertIn("Operaciones de cambio", content)
+        self.assertIn("Módulo aún no disponible", content)
+        self.assertEqual(content.count('<span class="small-box-footer'), 1)
+        self.assertEqual(content.count('aria-disabled="true"'), 2)
         self.assertNotIn("Placeholder", content)
         self.assertNotIn("Invitado", content)
 
     @override_settings(APP_ENV="Producción")
     def test_environment_indicator_is_hidden_in_production(self):
-        self.assertEqual(app_environment(None), {"app_environment": ""})
+        self.assertEqual(app_environment(None), {"app_environment": "", "es_administrador": False})
 
     @override_settings(APP_ENV="Desarrollo")
     def test_environment_indicator_is_visible_outside_production(self):
-        self.assertEqual(app_environment(None), {"app_environment": "Desarrollo"})
+        self.assertEqual(app_environment(None), {"app_environment": "Desarrollo", "es_administrador": False})
 
     def test_error_messages_use_bootstrap_danger_class(self):
         request = self.factory.get("/")
