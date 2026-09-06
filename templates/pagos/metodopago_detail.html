@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}{{ metodo.nombre }} | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Detalle de método de pago</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'metodopago-web-list' %}">Métodos de pago</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ metodo.nombre }}</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center mb-3"
+                     style="width: 96px; height: 96px; font-size: 2rem;"
+                     aria-hidden="true">
+                    <i class="bi bi-credit-card"></i>
+                </div>
+                <h3 class="h5 mb-1">{{ metodo.nombre }}</h3>
+                <p class="text-secondary mb-3 small">
+                    ID {{ metodo.id_metodo_pago }}
+                </p>
+                {% if metodo.habilitado %}
+                <span class="badge text-bg-success mb-3">Habilitado</span>
+                {% else %}
+                <span class="badge text-bg-secondary mb-3">Inhabilitado</span>
+                {% endif %}
+
+                <div class="d-grid gap-2 mt-2">
+                    <a href="{% url 'metodopago-web-update' metodo.id_metodo_pago %}"
+                       class="btn btn-primary">
+                        <i class="bi bi-pencil me-1" aria-hidden="true"></i>
+                        Editar
+                    </a>
+
+                    <form method="post"
+                          action="{% url 'metodopago-web-toggle' metodo.id_metodo_pago %}">
+                        {% csrf_token %}
+                        {% if metodo.habilitado %}
+                        <button type="submit"
+                                class="btn btn-outline-warning w-100">
+                            <i class="bi bi-toggle-off me-1" aria-hidden="true"></i>
+                            Inhabilitar
+                        </button>
+                        {% else %}
+                        <button type="submit"
+                                class="btn btn-outline-success w-100">
+                            <i class="bi bi-toggle-on me-1" aria-hidden="true"></i>
+                            Habilitar
+                        </button>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="col-lg-8">
+
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Información registrada</h3>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0">
+                    <tbody>
+                        <tr>
+                            <th scope="row" style="width: 14rem;">ID</th>
+                            <td>{{ metodo.id_metodo_pago }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Nombre</th>
+                            <td>{{ metodo.nombre }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Descripción</th>
+                            <td>
+                                {% if metodo.descripcion %}
+                                    {{ metodo.descripcion }}
+                                {% else %}
+                                    <span class="text-secondary fst-italic">Sin descripción</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Estado</th>
+                            <td>
+                                {% if metodo.habilitado %}
+                                Habilitado
+                                {% else %}
+                                Inhabilitado
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="bi bi-clock-history me-2" aria-hidden="true"></i>
+                    Trazabilidad
+                </h3>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0">
+                    <tbody>
+                        <tr>
+                            <th scope="row" style="width: 14rem;">Creado el</th>
+                            <td>{{ metodo.creado_en|date:"d/m/Y H:i" }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Creado por</th>
+                            <td>
+                                {% if metodo.creado_por %}
+                                    {% if metodo.creado_por.first_name or metodo.creado_por.last_name %}
+                                        {{ metodo.creado_por.first_name }} {{ metodo.creado_por.last_name }}
+                                    {% else %}
+                                        {{ metodo.creado_por.username }}
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-secondary">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Última modificación</th>
+                            <td>{{ metodo.actualizado_en|date:"d/m/Y H:i" }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Modificado por</th>
+                            <td>
+                                {% if metodo.modificado_por %}
+                                    {% if metodo.modificado_por.first_name or metodo.modificado_por.last_name %}
+                                        {{ metodo.modificado_por.first_name }} {{ metodo.modificado_por.last_name }}
+                                    {% else %}
+                                        {{ metodo.modificado_por.username }}
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-secondary">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer d-flex justify-content-start">
+                <a href="{% url 'metodopago-web-list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                    Volver al listado
+                </a>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}

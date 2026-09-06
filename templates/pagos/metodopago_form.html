@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">{{ page_title }}</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'metodopago-web-list' %}">Métodos de pago</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ page_title }}</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card card-primary card-outline">
+            <div class="card-header">
+                <h3 class="card-title">Datos del método de pago</h3>
+            </div>
+            <form method="post" novalidate>
+                {% csrf_token %}
+                <div class="card-body">
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger" role="alert">
+                        {{ form.non_field_errors }}
+                    </div>
+                    {% endif %}
+
+                    <div class="row g-3">
+
+                        <div class="col-12">
+                            <label for="{{ form.nombre.id_for_label }}" class="form-label">
+                                {{ form.nombre.label }}
+                                <span class="text-danger" aria-hidden="true">*</span>
+                            </label>
+                            {{ form.nombre }}
+                            {% for error in form.nombre.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="col-12">
+                            <label for="{{ form.descripcion.id_for_label }}" class="form-label">
+                                {{ form.descripcion.label }}
+                            </label>
+                            {{ form.descripcion }}
+                            {% for error in form.descripcion.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                {{ form.habilitado }}
+                                <label for="{{ form.habilitado.id_for_label }}" class="form-check-label">
+                                    {{ form.habilitado.label }}
+                                </label>
+                            </div>
+                            {% for error in form.habilitado.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+
+                    </div>
+                </div>
+                <div class="card-footer d-flex justify-content-between">
+                    <a href="{% url 'metodopago-web-list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                        Volver
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
+                        {{ submit_label }}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Criterios</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-secondary mb-3">
+                    Los métodos de pago definen las formas de pago disponibles
+                    para las operaciones cambiarias.
+                </p>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item px-0">
+                        <i class="bi bi-shield-check text-success me-2" aria-hidden="true"></i>
+                        El nombre debe ser único en el sistema.
+                    </li>
+                    <li class="list-group-item px-0">
+                        <i class="bi bi-toggle-on text-info me-2" aria-hidden="true"></i>
+                        Solo los métodos habilitados pueden usarse en operaciones.
+                    </li>
+                    <li class="list-group-item px-0">
+                        <i class="bi bi-clock-history text-warning me-2" aria-hidden="true"></i>
+                        Todos los cambios quedan registrados para trazabilidad.
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
