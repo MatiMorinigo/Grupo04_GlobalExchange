@@ -11,4 +11,5 @@ generada automáticamente con Sphinx a partir de los docstrings del proyecto.
    clientes
    core
    cotizaciones
+   pagos
    config
