@@ -7,6 +7,15 @@ from core import views as core_views
 
 
 def custom_logout(request):
+    """Cierra la sesión local y redirige al cierre de sesión de Keycloak.
+
+    Args:
+        request (django.http.HttpRequest): Solicitud cuya sesión se cerrará.
+
+    Returns:
+        django.http.HttpResponseRedirect: Redirección al endpoint de Keycloak
+        en localhost:8080, con retorno indicado a localhost:8000.
+    """
     logout(request)
     return redirect(
         "http://localhost:8080/realms/global-exchange/protocol/openid-connect/logout"
@@ -15,6 +24,14 @@ def custom_logout(request):
 
 
 def verificacion_fallida(request):
+    """Muestra la página de verificación fallida.
+
+    Args:
+        request (django.http.HttpRequest): Solicitud recibida por la vista.
+
+    Returns:
+        django.http.HttpResponse: Página de error de verificación.
+    """
     return render(request, "auth/verificacion_fallida.html")
 
 

@@ -12,14 +12,27 @@ from .services import SimulacionConversionError, simular_conversion
 
 
 class MonedaListView(generics.ListAPIView):
+    """Expone por API el listado de monedas activas."""
     queryset = Moneda.objects.filter(activa=True)
     serializer_class = MonedaSerializer
 
 
 class TasaCambioListView(generics.ListAPIView):
+    """Expone por API las tasas de cambio con filtros de vigencia y monedas."""
     serializer_class = TasaCambioSerializer
 
     def get_queryset(self):
+        """Filtra las tasas según los parámetros de consulta de la solicitud.
+
+        Por defecto consulta tasas vigentes. Reconoce true, 1, si y sí como
+        verdaderos, y false, 0 y no como falsos, sin distinguir mayúsculas.
+        Otros valores de vigente no restringen el estado. Normaliza a mayúsculas
+        los filtros moneda_origen y moneda_destino.
+
+        Returns:
+            django.db.models.QuerySet: Tasas con sus monedas relacionadas,
+            ordenadas por los códigos de origen y destino.
+        """
         queryset = TasaCambio.objects.select_related("moneda_origen", "moneda_destino")
         vigente = self.request.query_params.get("vigente", "true")
         moneda_origen = self.request.query_params.get("moneda_origen")
@@ -39,15 +52,27 @@ class TasaCambioListView(generics.ListAPIView):
 
 
 class TasaCambioDetailView(generics.RetrieveAPIView):
+    """Expone por API el detalle de una tasa identificada mediante id_tasa."""
     queryset = TasaCambio.objects.select_related("moneda_origen", "moneda_destino")
     serializer_class = TasaCambioSerializer
     lookup_field = "id_tasa"
 
 
 class TasaCambioParVigenteView(generics.RetrieveAPIView):
+    """Expone por API la tasa vigente de un par de monedas."""
     serializer_class = TasaCambioSerializer
 
     def get_object(self):
+        """Busca la tasa vigente del par indicado en la URL.
+
+        Normaliza a mayúsculas los parámetros moneda_origen y moneda_destino.
+
+        Returns:
+            TasaCambio: Tasa vigente con sus monedas relacionadas.
+
+        Raises:
+            django.http.Http404: Si no existe una tasa vigente para el par.
+        """
         return get_object_or_404(
             TasaCambio.objects.select_related("moneda_origen", "moneda_destino"),
             moneda_origen_id=self.kwargs["moneda_origen"].upper(),
@@ -57,7 +82,22 @@ class TasaCambioParVigenteView(generics.RetrieveAPIView):
 
 
 class SimulacionConversionApiView(APIView):
+    """Recibe por API solicitudes de simulación de conversiones monetarias."""
     def post(self, request):
+        """Valida la solicitud y devuelve el resultado de la simulación.
+
+        Args:
+            request (rest_framework.request.Request): Solicitud con las monedas
+                de origen y destino y el monto en su cuerpo.
+
+        Returns:
+            rest_framework.response.Response: Resultado de la simulación con
+            estado HTTP 200.
+
+        Raises:
+            rest_framework.serializers.ValidationError: Si los datos no son
+                válidos o el servicio rechaza la simulación.
+        """
         serializer = SimulacionConversionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         resultado = serializer.save()
@@ -65,11 +105,21 @@ class SimulacionConversionApiView(APIView):
 
 
 class CotizacionWebListView(ListView):
+    """Muestra las tasas vigentes y sus estadísticas en la interfaz web."""
     model = TasaCambio
     template_name = "cotizaciones/tasa_list.html"
     context_object_name = "tasas"
 
     def get_queryset(self):
+        """Obtiene las tasas vigentes, filtradas opcionalmente por moneda de origen.
+
+        Lee el parámetro GET moneda, elimina espacios en los extremos y lo
+        convierte a mayúsculas antes de aplicar el filtro.
+
+        Returns:
+            django.db.models.QuerySet: Tasas con sus monedas relacionadas,
+            ordenadas por los códigos de origen y destino.
+        """
         queryset = (
             TasaCambio.objects.filter(vigente=True)
             .select_related("moneda_origen", "moneda_destino")
@@ -83,6 +133,18 @@ class CotizacionWebListView(ListView):
         return queryset
 
     def get_context_data(self, **kwargs):
+        """Añade filtros, monedas activas y estadísticas al contexto del listado.
+
+        Calcula sobre las tasas del listado la fecha máxima de vigencia y el
+        número de tasas con variación de compra o venta distinta de cero.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto con el menú activo, monedas disponibles, filtro,
+            total de tasas, última actualización y cantidad de variaciones.
+        """
         context = super().get_context_data(**kwargs)
         tasas = context["tasas"]
         ultima_actualizacion = tasas.aggregate(fecha=Max("fecha_vigencia"))["fecha"]
@@ -105,15 +167,36 @@ class CotizacionWebListView(ListView):
 
 
 class SimulacionConversionWebView(FormView):
+    """Presenta el formulario y los resultados de la simulación de conversiones."""
     template_name = "cotizaciones/simulador.html"
     form_class = SimulacionConversionForm
 
     def get_context_data(self, **kwargs):
+        """Marca el menú de cotizaciones como activo en el simulador.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto de la plantilla con el menú activo.
+        """
         context = super().get_context_data(**kwargs)
         context["active_menu"] = "cotizaciones"
         return context
 
     def form_valid(self, form):
+        """Ejecuta la simulación y muestra su resultado en la misma plantilla.
+
+        Si el servicio genera SimulacionConversionError, añade el mensaje como
+        error general del formulario y presenta el formulario inválido.
+
+        Args:
+            form (SimulacionConversionForm): Formulario validado con monedas y monto.
+
+        Returns:
+            django.template.response.TemplateResponse: Página del simulador
+            con el resultado o con los errores del formulario.
+        """
         try:
             resultado = simular_conversion(
                 form.cleaned_data["moneda_origen"].codigo,

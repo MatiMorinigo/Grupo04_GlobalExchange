@@ -28,3 +28,4 @@ sqlparse==0.6.0
 typing_extensions==4.16.0
 tzdata==2026.3
 urllib3==2.7.0
+Sphinx==9.1.0

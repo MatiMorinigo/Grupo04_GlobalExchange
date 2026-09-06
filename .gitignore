@@ -24,3 +24,5 @@ media/
 .venv/
 venv/
 .venv*/
+
+docs/build/
