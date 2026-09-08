@@ -1,6 +1,45 @@
+from decimal import Decimal
+
 from django import forms
+from django.core.validators import MinValueValidator
 
 from .models import Moneda
+
+
+class TasaCambioEditarForm(forms.Form):
+    """Recoge los nuevos precios de compra y venta para modificar una tasa de cambio.
+
+    Incluye un campo oculto confirmado que distingue el primer envío, donde se
+    solicitan los nuevos precios, del envío de confirmación, donde se aplica
+    la modificación.
+    """
+    precio_compra = forms.DecimalField(
+        label="Nuevo precio de compra",
+        max_digits=18,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal("0.0001"))],
+        error_messages={
+            "required": "Ingrese el nuevo precio de compra.",
+            "min_value": "El precio de compra debe ser mayor a cero.",
+        },
+        widget=forms.NumberInput(
+            attrs={"class": "form-control", "step": "0.0001", "min": "0.0001"}
+        ),
+    )
+    precio_venta = forms.DecimalField(
+        label="Nuevo precio de venta",
+        max_digits=18,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal("0.0001"))],
+        error_messages={
+            "required": "Ingrese el nuevo precio de venta.",
+            "min_value": "El precio de venta debe ser mayor a cero.",
+        },
+        widget=forms.NumberInput(
+            attrs={"class": "form-control", "step": "0.0001", "min": "0.0001"}
+        ),
+    )
+    confirmado = forms.BooleanField(required=False, widget=forms.HiddenInput())
 
 
 class SimulacionConversionForm(forms.Form):

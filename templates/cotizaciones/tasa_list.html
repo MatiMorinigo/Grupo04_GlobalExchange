@@ -163,6 +163,9 @@
                         <th class="text-end">Venta</th>
                         <th>Variación</th>
                         <th class="text-end">Actualización</th>
+                        {% if puede_editar_tasas %}
+                        <th>Acciones</th>
+                        {% endif %}
                     </tr>
                 </thead>
 
@@ -227,6 +230,17 @@
                         <td class="text-end text-secondary small">
                             {{ tasa.fecha_vigencia|date:"d/m/Y H:i" }}
                         </td>
+
+                        {% if puede_editar_tasas %}
+                        <td>
+                            <a
+                                href="{% url 'tasa-web-editar' tasa.id_tasa %}"
+                                class="btn btn-sm btn-primary"
+                            >
+                                Editar
+                            </a>
+                        </td>
+                        {% endif %}
 
                     </tr>
 

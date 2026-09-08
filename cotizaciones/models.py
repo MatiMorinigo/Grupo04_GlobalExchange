@@ -1,7 +1,10 @@
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
+
+User = get_user_model()
 
 
 class Moneda(models.Model):
@@ -49,6 +52,14 @@ class TasaCambio(models.Model):
     fecha_vigencia = models.DateTimeField(default=timezone.now)
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
+    modificado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tasas_registradas",
+        verbose_name="Registrado por",
+    )
 
     class Meta:
         """Define el orden, los nombres y las restricciones del par de monedas."""
@@ -135,3 +146,52 @@ class TasaCambio(models.Model):
         if not anterior:
             return None
         return self.precio_venta - anterior.precio_venta
+
+
+class AuditoriaTasaCambio(models.Model):
+    """Registra en un log de auditoría cada modificación manual de una tasa de cambio."""
+    tasa_nueva = models.ForeignKey(
+        TasaCambio,
+        on_delete=models.CASCADE,
+        related_name="auditorias",
+        verbose_name="Tasa nueva",
+    )
+    tasa_anterior = models.ForeignKey(
+        TasaCambio,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="auditorias_como_anterior",
+        verbose_name="Tasa anterior",
+    )
+    precio_compra_anterior = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True, verbose_name="Precio de compra anterior"
+    )
+    precio_venta_anterior = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True, verbose_name="Precio de venta anterior"
+    )
+    precio_compra_nuevo = models.DecimalField(max_digits=18, decimal_places=4, verbose_name="Precio de compra nuevo")
+    precio_venta_nuevo = models.DecimalField(max_digits=18, decimal_places=4, verbose_name="Precio de venta nuevo")
+    realizado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="modificaciones_tasas",
+        verbose_name="Realizado por",
+    )
+    fecha_modificacion = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de modificación")
+
+    class Meta:
+        """Define el orden y los nombres de presentación del log de auditoría de tasas."""
+        ordering = ["-fecha_modificacion"]
+        verbose_name = "Auditoría de tasa de cambio"
+        verbose_name_plural = "Auditorías de tasas de cambio"
+
+    def __str__(self):
+        """Devuelve una etiqueta legible del registro de auditoría.
+
+        Returns:
+            str: Par de monedas y fecha de la modificación registrada.
+        """
+        return f"{self.tasa_nueva} - {self.fecha_modificacion:%d/%m/%Y %H:%M}"
