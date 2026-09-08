@@ -63,7 +63,8 @@ def obtener_tasa_para_simulacion(moneda_origen, moneda_destino):
 
     Normaliza los códigos a mayúsculas. Utiliza el precio de compra para
     convertir a PYG y el precio de venta para convertir desde PYG, buscando
-    en ambos casos el par registrado como moneda extranjera/PYG.
+    en ambos casos el par registrado como moneda extranjera/PYG. Solo
+    considera tasas cuyas dos monedas estén habilitadas (activa=True).
 
     Args:
         moneda_origen (str): Código de la moneda que se entrega.
@@ -86,7 +87,13 @@ def obtener_tasa_para_simulacion(moneda_origen, moneda_destino):
     if destino == PYG:
         tasa = (
             TasaCambio.objects.select_related("moneda_origen", "moneda_destino")
-            .filter(moneda_origen_id=origen, moneda_destino_id=PYG, vigente=True)
+            .filter(
+                moneda_origen_id=origen,
+                moneda_destino_id=PYG,
+                vigente=True,
+                moneda_origen__activa=True,
+                moneda_destino__activa=True,
+            )
             .first()
         )
         if not tasa:
@@ -97,7 +104,13 @@ def obtener_tasa_para_simulacion(moneda_origen, moneda_destino):
     if origen == PYG:
         tasa = (
             TasaCambio.objects.select_related("moneda_origen", "moneda_destino")
-            .filter(moneda_origen_id=destino, moneda_destino_id=PYG, vigente=True)
+            .filter(
+                moneda_origen_id=destino,
+                moneda_destino_id=PYG,
+                vigente=True,
+                moneda_origen__activa=True,
+                moneda_destino__activa=True,
+            )
             .first()
         )
         if not tasa:

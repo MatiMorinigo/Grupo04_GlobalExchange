@@ -327,6 +327,20 @@
 
                     <li class="nav-item">
 
+                        <a href="{% url 'moneda-web-list' %}"
+                           class="nav-link {% if active_menu == 'monedas' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-cash-coin"></i>
+
+                            <p>Monedas</p>
+
+                        </a>
+
+                    </li>
+
+
+                    <li class="nav-item">
+
                         <li class="nav-item">
                             <a href="{% url 'configuracion_beneficios' %}" class="nav-link">
                                 <i class="nav-icon bi bi-sliders"></i>

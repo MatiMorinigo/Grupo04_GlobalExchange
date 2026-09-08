@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center">
+        <h1>Monedas admitidas</h1>
+        <a href="{% url 'moneda-web-create' %}" class="btn btn-primary">
+            Nueva moneda
+        </a>
+    </div>
+
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>Código</th>
+                <th>Nombre</th>
+                <th>Símbolo</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for moneda in monedas %}
+            <tr>
+                <td>{{ moneda.codigo }}</td>
+                <td>{{ moneda.nombre }}</td>
+                <td>{{ moneda.simbolo }}</td>
+                <td>
+                    {% if moneda.activa %}
+                    <span class="badge text-bg-success">Habilitada</span>
+                    {% else %}
+                    <span class="badge text-bg-secondary">Deshabilitada</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a
+                        href="{% url 'moneda-web-update' moneda.codigo %}"
+                        class="btn btn-sm btn-primary"
+                    >
+                        Editar
+                    </a>
+                    {% if moneda.activa %}
+                    <form
+                        method="post"
+                        action="{% url 'moneda-web-deactivate' moneda.codigo %}"
+                        class="d-inline"
+                    >
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                            Deshabilitar
+                        </button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="text-center">No hay monedas registradas.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

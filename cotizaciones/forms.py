@@ -3,6 +3,82 @@ from django import forms
 from .models import Moneda
 
 
+class MonedaForm(forms.ModelForm):
+    """Permite crear y editar monedas admitidas mediante la interfaz web.
+
+    El código no puede modificarse al editar una moneda existente, ya que
+    es su clave primaria.
+    """
+    class Meta:
+        """Configura los campos y la presentación del formulario de monedas."""
+        model = Moneda
+        fields = ["codigo", "nombre", "simbolo"]
+        labels = {
+            "codigo": "Código",
+            "nombre": "Nombre",
+            "simbolo": "Símbolo",
+        }
+        widgets = {
+            "codigo": forms.TextInput(
+                attrs={
+                    "class": "form-control text-uppercase",
+                    "placeholder": "Ej. USD",
+                    "maxlength": "3",
+                    "autocomplete": "off",
+                }
+            ),
+            "nombre": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "Ej. Dólar estadounidense",
+                    "autocomplete": "off",
+                }
+            ),
+            "simbolo": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "Ej. US$",
+                    "autocomplete": "off",
+                }
+            ),
+        }
+        error_messages = {
+            "codigo": {
+                "required": "El código es obligatorio.",
+                "unique": "Ya existe una moneda registrada con este código.",
+            },
+            "nombre": {
+                "required": "El nombre es obligatorio.",
+                "blank": "El nombre no puede estar vacío.",
+            },
+            "simbolo": {
+                "required": "El símbolo es obligatorio.",
+                "blank": "El símbolo no puede estar vacío.",
+            },
+        }
+
+    def __init__(self, *args, **kwargs):
+        """Deshabilita el código al editar una moneda existente.
+
+        Args:
+            *args: Argumentos posicionales del formulario base de Django.
+            **kwargs: Opciones del formulario base, como datos e instancia.
+        """
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["codigo"].disabled = True
+
+    def clean_codigo(self):
+        """Normaliza el código de la moneda a mayúsculas.
+
+        Returns:
+            str: Código de la moneda en mayúsculas.
+        """
+        if self.instance.pk:
+            return self.instance.pk
+        return self.cleaned_data["codigo"].upper()
+
+
 class SimulacionConversionForm(forms.Form):
     """
     Recoge las monedas, el monto y la categoría del cliente

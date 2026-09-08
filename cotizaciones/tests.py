@@ -1,9 +1,10 @@
 import json
 from decimal import Decimal
-from django.test import TestCase
+from unittest.mock import patch
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from .models import Moneda, TasaCambio
+from .models import AuditoriaMoneda, Moneda, TasaCambio
 from django.contrib.auth.models import AnonymousUser, User
 from django.test import RequestFactory
 
@@ -14,8 +15,20 @@ from clientes.models import (
 )
 from usuarios.models import UsuarioCliente
 
-from .services import simular_conversion
+from .services import SimulacionConversionError, simular_conversion
 from .views import obtener_categoria_para_simulacion
+
+
+MIDDLEWARE_SIN_OIDC = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
 
 class CotizacionWebViewTests(TestCase):
     def setUp(self):
@@ -76,6 +89,23 @@ class CotizacionWebViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Subió", content)
+
+    def test_cotizaciones_list_excludes_pairs_with_disabled_currency(self):
+        self.usd.activa = False
+        self.usd.save(update_fields=["activa"])
+        TasaCambio.objects.create(
+            moneda_origen=self.usd,
+            moneda_destino=self.pyg,
+            precio_compra=Decimal("7200.0000"),
+            precio_venta=Decimal("7350.0000"),
+        )
+
+        response = self.client.get(reverse("cotizacion-web-list"), HTTP_HOST="127.0.0.1")
+        content = response.content.decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("USD/PYG", content)
+        self.assertIn("No hay tasas vigentes para mostrar", content)
 
 
 class CotizacionApiTests(TestCase):
@@ -299,6 +329,21 @@ class SimulacionConversionApiTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("guaraníes", str(response.json()))
+
+    def test_simulacion_rechaza_conversion_con_moneda_deshabilitada(self):
+        """El servicio no debe usar tasas de una moneda deshabilitada, aunque
+        se lo invoque directamente sin pasar por la validación del serializer."""
+        TasaCambio.objects.create(
+            moneda_origen=self.usd,
+            moneda_destino=self.pyg,
+            precio_compra=Decimal("7200.0000"),
+            precio_venta=Decimal("7350.0000"),
+        )
+        self.usd.activa = False
+        self.usd.save(update_fields=["activa"])
+
+        with self.assertRaises(SimulacionConversionError):
+            simular_conversion("USD", "PYG", Decimal("100.00"))
 
 class SimulacionBeneficiosTests(TestCase):
     """Prueba la aplicación de beneficios por categoría en el simulador."""
@@ -527,3 +572,131 @@ class CategoriaSimulacionTests(TestCase):
             categoria,
             CategoriaCliente.MINORISTA,
         )
+
+
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC)
+class MonedaWebViewTests(TestCase):
+    """Prueba la gestión web de monedas admitidas y su registro de auditoría."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="adminmonedas",
+            password="testpass123",
+        )
+        self.client.force_login(self.user)
+
+        self.usd, _ = Moneda.objects.get_or_create(
+            codigo="USD",
+            defaults={"nombre": "Dólar estadounidense", "simbolo": "US$"},
+        )
+
+    def test_moneda_list_renders_currencies(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            response = self.client.get(reverse("moneda-web-list"), HTTP_HOST="127.0.0.1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "USD")
+        self.assertContains(response, "Dólar estadounidense")
+
+    def test_moneda_list_requires_admin(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=False):
+            response = self.client.get(reverse("moneda-web-list"), HTTP_HOST="127.0.0.1")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_moneda_create_inserts_record_and_logs_auditoria(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            self.client.post(
+                reverse("moneda-web-create"),
+                {
+                    "codigo": "gbp",
+                    "nombre": "Libra esterlina",
+                    "simbolo": "£",
+                },
+                HTTP_HOST="127.0.0.1",
+            )
+
+        moneda = Moneda.objects.get(codigo="GBP")
+        self.assertEqual(moneda.nombre, "Libra esterlina")
+
+        auditoria = AuditoriaMoneda.objects.get(moneda=moneda)
+        self.assertEqual(auditoria.accion, "CREACION")
+        self.assertEqual(auditoria.realizado_por, self.user)
+        self.assertEqual(auditoria.datos_nuevos["codigo"], "GBP")
+
+    def test_moneda_update_changes_fields_and_logs_auditoria(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            self.client.post(
+                reverse("moneda-web-update", kwargs={"codigo": "USD"}),
+                {
+                    "codigo": "USD",
+                    "nombre": "Dólar de Estados Unidos",
+                    "simbolo": "US$",
+                },
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.usd.refresh_from_db()
+        self.assertEqual(self.usd.nombre, "Dólar de Estados Unidos")
+
+        auditoria = AuditoriaMoneda.objects.get(moneda=self.usd, accion="MODIFICACION")
+        self.assertEqual(auditoria.datos_anteriores["nombre"], "Dólar estadounidense")
+        self.assertEqual(auditoria.datos_nuevos["nombre"], "Dólar de Estados Unidos")
+
+    def test_moneda_update_does_not_allow_changing_codigo(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            self.client.post(
+                reverse("moneda-web-update", kwargs={"codigo": "USD"}),
+                {
+                    "codigo": "XXX",
+                    "nombre": "Dólar estadounidense",
+                    "simbolo": "US$",
+                },
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertTrue(Moneda.objects.filter(codigo="USD").exists())
+        self.assertFalse(Moneda.objects.filter(codigo="XXX").exists())
+
+    def test_moneda_deactivate_disables_currency_and_logs_auditoria(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            self.client.post(
+                reverse("moneda-web-deactivate", kwargs={"codigo": "USD"}),
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.usd.refresh_from_db()
+        self.assertFalse(self.usd.activa)
+
+        auditoria = AuditoriaMoneda.objects.get(moneda=self.usd, accion="DESHABILITACION")
+        self.assertEqual(auditoria.realizado_por, self.user)
+
+    def test_moneda_deactivate_twice_shows_info_message_without_duplicate_log(self):
+        self.usd.activa = False
+        self.usd.save(update_fields=["activa"])
+
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            self.client.post(
+                reverse("moneda-web-deactivate", kwargs={"codigo": "USD"}),
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertEqual(
+            AuditoriaMoneda.objects.filter(moneda=self.usd, accion="DESHABILITACION").count(),
+            0,
+        )
+
+    def test_moneda_form_rejects_duplicate_codigo(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            response = self.client.post(
+                reverse("moneda-web-create"),
+                {
+                    "codigo": "USD",
+                    "nombre": "Otro dólar",
+                    "simbolo": "US$",
+                },
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ya existe una moneda registrada con este código.")

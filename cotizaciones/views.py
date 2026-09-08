@@ -1,12 +1,16 @@
+from django.contrib import messages
 from django.db.models import Max
-from django.shortcuts import get_object_or_404
-from django.views.generic import FormView, ListView
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse_lazy
+from django.views import View
+from django.views.generic import CreateView, FormView, ListView, UpdateView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .forms import SimulacionConversionForm
-from .models import Moneda, TasaCambio
+from core.mixins import AdminRequiredMixin
+from .forms import MonedaForm, SimulacionConversionForm
+from .models import AccionAuditoriaMoneda, AuditoriaMoneda, Moneda, TasaCambio
 from .serializers import MonedaSerializer, SimulacionConversionSerializer, TasaCambioSerializer
 from .services import SimulacionConversionError, simular_conversion
 from clientes.models import CategoriaCliente
@@ -16,6 +20,190 @@ class MonedaListView(generics.ListAPIView):
     """Expone por API el listado de monedas activas."""
     queryset = Moneda.objects.filter(activa=True)
     serializer_class = MonedaSerializer
+
+
+class MonedaWebListView(AdminRequiredMixin, ListView):
+    """Muestra a administradores el listado de monedas admitidas por el sistema."""
+    model = Moneda
+    template_name = "cotizaciones/moneda_list.html"
+    context_object_name = "monedas"
+
+    def get_queryset(self):
+        """Obtiene todas las monedas ordenadas por código.
+
+        Returns:
+            django.db.models.QuerySet: Monedas ordenadas por código.
+        """
+        return Moneda.objects.order_by("codigo")
+
+    def get_context_data(self, **kwargs):
+        """Marca el menú de monedas como activo en el listado.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto del listado con la selección del menú de monedas.
+        """
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "monedas"
+        return context
+
+
+class MonedaWebCreateView(AdminRequiredMixin, CreateView):
+    """Permite a administradores agregar monedas admitidas mediante un formulario web."""
+    model = Moneda
+    form_class = MonedaForm
+    template_name = "cotizaciones/moneda_form.html"
+    success_url = reverse_lazy("moneda-web-list")
+
+    def form_valid(self, form):
+        """Guarda la moneda creada y registra la acción en la auditoría.
+
+        Args:
+            form (MonedaForm): Formulario validado con los datos de la moneda.
+
+        Returns:
+            django.http.HttpResponseRedirect: Redirección al listado de monedas
+            después de guardar el registro.
+        """
+        response = super().form_valid(form)
+        AuditoriaMoneda.objects.registrar(
+            moneda=self.object,
+            accion=AccionAuditoriaMoneda.CREACION,
+            realizado_por=self.request.user if self.request.user.is_authenticated else None,
+            datos_nuevos={
+                "codigo": self.object.codigo,
+                "nombre": self.object.nombre,
+                "simbolo": self.object.simbolo,
+                "activa": self.object.activa,
+            },
+        )
+        messages.success(self.request, "Moneda creada correctamente.")
+        return response
+
+    def get_context_data(self, **kwargs):
+        """Prepara los textos y el menú del formulario de creación.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto con el menú activo, el título y la etiqueta del botón.
+        """
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "active_menu": "monedas",
+                "page_title": "Nueva moneda",
+                "submit_label": "Guardar moneda",
+            }
+        )
+        return context
+
+
+class MonedaWebUpdateView(AdminRequiredMixin, UpdateView):
+    """Permite a administradores editar el nombre y símbolo de una moneda."""
+    model = Moneda
+    form_class = MonedaForm
+    template_name = "cotizaciones/moneda_form.html"
+    pk_url_kwarg = "codigo"
+    success_url = reverse_lazy("moneda-web-list")
+
+    def get_object(self, queryset=None):
+        """Obtiene la moneda a editar y guarda una copia de sus datos actuales.
+
+        Returns:
+            Moneda: Moneda identificada por el código de la URL.
+        """
+        moneda = super().get_object(queryset)
+        self._datos_anteriores = {
+            "nombre": moneda.nombre,
+            "simbolo": moneda.simbolo,
+        }
+        return moneda
+
+    def form_valid(self, form):
+        """Guarda los cambios de la moneda y registra la acción en la auditoría.
+
+        Args:
+            form (MonedaForm): Formulario validado con los nuevos datos.
+
+        Returns:
+            django.http.HttpResponseRedirect: Redirección al listado de monedas
+            después de guardar los cambios.
+        """
+        response = super().form_valid(form)
+        AuditoriaMoneda.objects.registrar(
+            moneda=self.object,
+            accion=AccionAuditoriaMoneda.MODIFICACION,
+            realizado_por=self.request.user if self.request.user.is_authenticated else None,
+            datos_anteriores=self._datos_anteriores,
+            datos_nuevos={
+                "nombre": self.object.nombre,
+                "simbolo": self.object.simbolo,
+            },
+        )
+        messages.success(self.request, "Moneda actualizada correctamente.")
+        return response
+
+    def get_context_data(self, **kwargs):
+        """Prepara los textos y el menú del formulario de edición.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto con el menú activo, el título y la etiqueta del botón.
+        """
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "active_menu": "monedas",
+                "page_title": f"Editar moneda {self.object.codigo}",
+                "submit_label": "Guardar cambios",
+            }
+        )
+        return context
+
+
+class MonedaWebDeactivateView(AdminRequiredMixin, View):
+    """Permite a administradores deshabilitar monedas desde la interfaz web."""
+    def post(self, request, codigo):
+        """Deshabilita la moneda y redirige al listado de monedas.
+
+        Añade un mensaje de éxito si cambia el estado o un mensaje informativo
+        si la moneda ya estaba deshabilitada. Registra la acción en la
+        auditoría solo cuando efectivamente se deshabilita la moneda.
+
+        Args:
+            request (django.http.HttpRequest): Solicitud utilizada para registrar
+                los mensajes y el usuario de la operación.
+            codigo (str): Código de la moneda que se desea deshabilitar.
+
+        Returns:
+            django.http.HttpResponseRedirect: Redirección al listado de monedas.
+
+        Raises:
+            django.http.Http404: Si la moneda no existe.
+        """
+        moneda = get_object_or_404(Moneda, codigo=codigo)
+
+        if moneda.activa:
+            moneda.activa = False
+            moneda.save(update_fields=["activa"])
+            AuditoriaMoneda.objects.registrar(
+                moneda=moneda,
+                accion=AccionAuditoriaMoneda.DESHABILITACION,
+                realizado_por=request.user if request.user.is_authenticated else None,
+                datos_anteriores={"activa": True},
+                datos_nuevos={"activa": False},
+            )
+            messages.success(request, "Moneda deshabilitada correctamente.")
+        else:
+            messages.info(request, "La moneda ya se encontraba deshabilitada.")
+
+        return redirect("moneda-web-list")
 
 
 class TasaCambioListView(generics.ListAPIView):
@@ -115,14 +303,19 @@ class CotizacionWebListView(ListView):
         """Obtiene las tasas vigentes, filtradas opcionalmente por moneda de origen.
 
         Lee el parámetro GET moneda, elimina espacios en los extremos y lo
-        convierte a mayúsculas antes de aplicar el filtro.
+        convierte a mayúsculas antes de aplicar el filtro. Excluye las tasas
+        cuya moneda de origen o destino esté deshabilitada.
 
         Returns:
             django.db.models.QuerySet: Tasas con sus monedas relacionadas,
             ordenadas por los códigos de origen y destino.
         """
         queryset = (
-            TasaCambio.objects.filter(vigente=True)
+            TasaCambio.objects.filter(
+                vigente=True,
+                moneda_origen__activa=True,
+                moneda_destino__activa=True,
+            )
             .select_related("moneda_origen", "moneda_destino")
             .order_by("moneda_origen_id", "moneda_destino_id")
         )
