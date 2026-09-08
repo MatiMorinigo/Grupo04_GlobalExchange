@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import CategoriaCliente, Cliente, TipoCliente
+from .models import CategoriaCliente, Cliente, TipoCliente, ConfiguracionBeneficioCategoria
 
 
 class ClienteForm(forms.ModelForm):
@@ -63,3 +63,19 @@ class ClienteForm(forms.ModelForm):
                 "invalid_choice": "El tipo de cliente ingresado no es válido.",
             },
         }
+
+class ConfiguracionBeneficioCategoriaForm(forms.ModelForm):
+    """
+    Permite modificar el porcentaje de beneficio y el límite mensual
+    correspondiente a una categoría de cliente.
+    """
+
+    class Meta:
+        """
+        Define los campos editables de la configuración de beneficios.
+        """
+        model = ConfiguracionBeneficioCategoria
+        fields = [
+            "porcentaje_beneficio",
+            "limite_mensual_pyg",
+        ]

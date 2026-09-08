@@ -4,7 +4,10 @@ from .models import Moneda
 
 
 class SimulacionConversionForm(forms.Form):
-    """Recoge las monedas activas y el monto para simular una conversión."""
+    """
+    Recoge las monedas, el monto y la categoría del cliente
+    para simular una conversión monetaria.
+    """
     moneda_origen = forms.ModelChoiceField(
         queryset=Moneda.objects.none(),
         to_field_name="codigo",

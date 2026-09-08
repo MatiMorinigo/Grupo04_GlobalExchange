@@ -1,12 +1,21 @@
 import json
 from decimal import Decimal
-
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-
 from .models import Moneda, TasaCambio
+from django.contrib.auth.models import AnonymousUser, User
+from django.test import RequestFactory
 
+from clientes.models import (
+    CategoriaCliente,
+    Cliente,
+    ConfiguracionBeneficioCategoria,
+)
+from usuarios.models import UsuarioCliente
+
+from .services import simular_conversion
+from .views import obtener_categoria_para_simulacion
 
 class CotizacionWebViewTests(TestCase):
     def setUp(self):
@@ -290,3 +299,231 @@ class SimulacionConversionApiTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("guaraníes", str(response.json()))
+
+class SimulacionBeneficiosTests(TestCase):
+    """Prueba la aplicación de beneficios por categoría en el simulador."""
+
+    def setUp(self):
+        self.pyg, _ = Moneda.objects.get_or_create(
+            codigo="PYG",
+            defaults={
+                "nombre": "Guaraní paraguayo",
+                "simbolo": "Gs",
+            },
+        )
+
+        self.usd, _ = Moneda.objects.get_or_create(
+            codigo="USD",
+            defaults={
+                "nombre": "Dólar estadounidense",
+                "simbolo": "US$",
+            },
+        )
+
+        TasaCambio.objects.create(
+            moneda_origen=self.usd,
+            moneda_destino=self.pyg,
+            precio_compra=Decimal("7500.0000"),
+            precio_venta=Decimal("7600.0000"),
+        )
+
+        self.configuracion_vip, _ = (
+            ConfiguracionBeneficioCategoria.objects.update_or_create(
+                categoria=CategoriaCliente.VIP,
+                defaults={
+                    "porcentaje_beneficio": Decimal("5.00"),
+                    "limite_mensual_pyg": Decimal("50000000.00"),
+                },
+            )
+        )
+
+        ConfiguracionBeneficioCategoria.objects.update_or_create(
+            categoria=CategoriaCliente.MINORISTA,
+            defaults={
+                "porcentaje_beneficio": Decimal("0.00"),
+                "limite_mensual_pyg": Decimal("0.00"),
+            },
+        )
+
+    def test_vip_aplica_beneficio_completo_usd_a_pyg(self):
+        resultado = simular_conversion(
+            "USD",
+            "PYG",
+            Decimal("100.00"),
+            categoria=CategoriaCliente.VIP,
+        )
+
+        self.assertEqual(
+            resultado["subtotal"],
+            Decimal("750000.00"),
+        )
+        self.assertEqual(
+            resultado["beneficio_porcentaje"],
+            Decimal("5.00"),
+        )
+        self.assertEqual(
+            resultado["beneficio_monto"],
+            Decimal("37500.00"),
+        )
+        self.assertEqual(
+            resultado["total_final"],
+            Decimal("787500.00"),
+        )
+
+    def test_vip_aplica_beneficio_parcial_al_superar_limite(self):
+        resultado = simular_conversion(
+            "USD",
+            "PYG",
+            Decimal("10000.00"),
+            categoria=CategoriaCliente.VIP,
+        )
+
+        self.assertEqual(
+            resultado["subtotal"],
+            Decimal("75000000.00"),
+        )
+        self.assertEqual(
+            resultado["monto_beneficiado_pyg"],
+            Decimal("50000000.00"),
+        )
+        self.assertEqual(
+            resultado["beneficio_monto"],
+            Decimal("2500000.00"),
+        )
+        self.assertEqual(
+            resultado["total_final"],
+            Decimal("77500000.00"),
+        )
+        self.assertIn(
+            "parcialmente",
+            resultado["mensaje_beneficio"],
+        )
+
+    def test_vip_aplica_beneficio_pyg_a_usd(self):
+        resultado = simular_conversion(
+            "PYG",
+            "USD",
+            Decimal("7600000.00"),
+            categoria=CategoriaCliente.VIP,
+        )
+
+        self.assertEqual(
+            resultado["subtotal"],
+            Decimal("1000.00"),
+        )
+
+        self.assertEqual(
+            resultado["beneficio_porcentaje"],
+            Decimal("5.00"),
+        )
+
+        self.assertEqual(
+            resultado["total_final"],
+            Decimal("1052.63"),
+        )
+
+    def test_minorista_sin_beneficio(self):
+        resultado = simular_conversion(
+            "USD",
+            "PYG",
+            Decimal("100.00"),
+            categoria=CategoriaCliente.MINORISTA,
+        )
+
+        self.assertEqual(
+            resultado["subtotal"],
+            Decimal("750000.00"),
+        )
+        self.assertEqual(
+            resultado["beneficio_monto"],
+            Decimal("0.00"),
+        )
+        self.assertEqual(
+            resultado["total_final"],
+            Decimal("750000.00"),
+        )
+
+    def test_simulacion_no_consume_limite_mensual(self):
+        limite_original = self.configuracion_vip.limite_mensual_pyg
+
+        simular_conversion(
+            "USD",
+            "PYG",
+            Decimal("10000.00"),
+            categoria=CategoriaCliente.VIP,
+        )
+
+        simular_conversion(
+            "USD",
+            "PYG",
+            Decimal("10000.00"),
+            categoria=CategoriaCliente.VIP,
+        )
+
+        self.configuracion_vip.refresh_from_db()
+
+        self.assertEqual(
+            self.configuracion_vip.limite_mensual_pyg,
+            limite_original,
+        )
+
+class CategoriaSimulacionTests(TestCase):
+    """Prueba la selección automática de categoría para el simulador."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def test_visitante_utiliza_categoria_minorista(self):
+        request = self.factory.get("/")
+        request.user = AnonymousUser()
+
+        categoria = obtener_categoria_para_simulacion(request)
+
+        self.assertEqual(
+            categoria,
+            CategoriaCliente.MINORISTA,
+        )
+
+    def test_usuario_utiliza_categoria_de_cliente_activo(self):
+        user = User.objects.create_user(
+            username="usuario_vip",
+            password="testpass123",
+        )
+
+        cliente = Cliente.objects.create(
+            ruc="80099999-1",
+            nombre="Cliente VIP",
+            categoria=CategoriaCliente.VIP,
+            tipo="FISICA",
+        )
+
+        UsuarioCliente.objects.create(
+            usuario=user,
+            cliente_activo=cliente,
+        )
+
+        request = self.factory.get("/")
+        request.user = user
+
+        categoria = obtener_categoria_para_simulacion(request)
+
+        self.assertEqual(
+            categoria,
+            CategoriaCliente.VIP,
+        )
+
+    def test_usuario_sin_cliente_activo_utiliza_minorista(self):
+        user = User.objects.create_user(
+            username="usuario_sin_cliente",
+            password="testpass123",
+        )
+
+        request = self.factory.get("/")
+        request.user = user
+
+        categoria = obtener_categoria_para_simulacion(request)
+
+        self.assertEqual(
+            categoria,
+            CategoriaCliente.MINORISTA,
+        )

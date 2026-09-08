@@ -9,7 +9,8 @@ from .forms import SimulacionConversionForm
 from .models import Moneda, TasaCambio
 from .serializers import MonedaSerializer, SimulacionConversionSerializer, TasaCambioSerializer
 from .services import SimulacionConversionError, simular_conversion
-
+from clientes.models import CategoriaCliente
+from usuarios.models import UsuarioCliente
 
 class MonedaListView(generics.ListAPIView):
     """Expone por API el listado de monedas activas."""
@@ -165,6 +166,38 @@ class CotizacionWebListView(ListView):
         )
         return context
 
+def obtener_categoria_para_simulacion(request):
+    """
+    Obtiene la categoría aplicable a una simulación de conversión.
+
+    Si el usuario posee un cliente activo, utiliza la categoría de dicho
+    cliente. Para visitantes, usuarios sin asociación o sin cliente activo,
+    utiliza la categoría minorista.
+
+    Args:
+        request (django.http.HttpRequest): Solicitud HTTP actual.
+
+    Returns:
+        str: Código de la categoría aplicable a la simulación.
+    """
+    if not request.user.is_authenticated:
+        return CategoriaCliente.MINORISTA
+
+    perfil = (
+        UsuarioCliente.objects
+        .select_related("cliente_activo")
+        .filter(usuario=request.user)
+        .first()
+    )
+
+    if (
+        perfil
+        and perfil.cliente_activo
+        and perfil.cliente_activo.activo
+    ):
+        return perfil.cliente_activo.categoria
+
+    return CategoriaCliente.MINORISTA
 
 class SimulacionConversionWebView(FormView):
     """Presenta el formulario y los resultados de la simulación de conversiones."""
@@ -172,36 +205,32 @@ class SimulacionConversionWebView(FormView):
     form_class = SimulacionConversionForm
 
     def get_context_data(self, **kwargs):
-        """Marca el menú de cotizaciones como activo en el simulador.
-
-        Args:
-            **kwargs: Datos adicionales del contexto de la vista base.
-
-        Returns:
-            dict: Contexto de la plantilla con el menú activo.
-        """
+        """Añade información de la simulación al contexto."""
         context = super().get_context_data(**kwargs)
+
+        categoria = obtener_categoria_para_simulacion(self.request)
+
         context["active_menu"] = "cotizaciones"
+        context["categoria_simulacion"] = categoria
+        context["categoria_simulacion_label"] = dict(
+            CategoriaCliente.choices
+        ).get(categoria, categoria)
+
         return context
 
     def form_valid(self, form):
-        """Ejecuta la simulación y muestra su resultado en la misma plantilla.
-
-        Si el servicio genera SimulacionConversionError, añade el mensaje como
-        error general del formulario y presenta el formulario inválido.
-
-        Args:
-            form (SimulacionConversionForm): Formulario validado con monedas y monto.
-
-        Returns:
-            django.template.response.TemplateResponse: Página del simulador
-            con el resultado o con los errores del formulario.
         """
+        Ejecuta la simulación utilizando automáticamente la categoría
+        correspondiente al cliente activo del usuario.
+        """
+        categoria = obtener_categoria_para_simulacion(self.request)
+
         try:
             resultado = simular_conversion(
                 form.cleaned_data["moneda_origen"].codigo,
                 form.cleaned_data["moneda_destino"].codigo,
                 form.cleaned_data["monto"],
+                categoria=categoria,
             )
         except SimulacionConversionError as exc:
             form.add_error(None, str(exc))

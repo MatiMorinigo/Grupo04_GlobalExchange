@@ -2,6 +2,8 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from .models import TasaCambio
 
+from clientes.models import ConfiguracionBeneficioCategoria
+
 
 PYG = "PYG"
 DECIMAL_PLACES = Decimal("0.01")
@@ -27,6 +29,34 @@ def redondear_monto(valor):
     """
     return valor.quantize(DECIMAL_PLACES, rounding=ROUND_HALF_UP)
 
+def obtener_beneficio_categoria(categoria):
+    """
+    Obtiene la configuración de beneficio asociada a una categoría.
+
+    Args:
+        categoria (str or None): Categoría del cliente.
+
+    Returns:
+        ConfiguracionBeneficioCategoria or None: Configuración encontrada.
+        Si no se proporciona categoría, retorna None.
+
+    Raises:
+        SimulacionConversionError: Si la categoría no posee una
+            configuración de beneficios.
+    """
+    if not categoria:
+        return None
+
+    configuracion = ConfiguracionBeneficioCategoria.objects.filter(
+        categoria=categoria
+    ).first()
+
+    if not configuracion:
+        raise SimulacionConversionError(
+            "No existe configuración de beneficios para la categoría seleccionada."
+        )
+
+    return configuracion
 
 def obtener_tasa_para_simulacion(moneda_origen, moneda_destino):
     """Selecciona la tasa vigente para una conversión que incluya guaraníes.
@@ -78,31 +108,26 @@ def obtener_tasa_para_simulacion(moneda_origen, moneda_destino):
     raise SimulacionConversionError("La simulación debe incluir guaraníes como moneda de origen o destino.")
 
 
-def simular_conversion(moneda_origen, moneda_destino, monto):
-    """Calcula una conversión monetaria sin guardar una operación.
+def simular_conversion(moneda_origen, moneda_destino, monto, categoria=None):
+    """
+    Calcula una conversión monetaria sin registrar una transacción.
 
-    Multiplica por el precio de compra al convertir a PYG y divide por el
-    precio de venta al convertir desde PYG. Redondea los importes a dos
-    decimales y devuelve descuentos de valor cero.
+    Si se proporciona una categoría de cliente, aplica el beneficio
+    configurado hasta el límite mensual disponible. Como se trata de una
+    simulación, el límite no se consume ni se modifica en la base de datos.
 
     Args:
-        moneda_origen (str): Código de la moneda que se entrega.
-        moneda_destino (str): Código de la moneda que se recibe.
-        monto (decimal.Decimal or str or int or float): Importe positivo
-            expresado en la moneda de origen.
+        moneda_origen (str): Código de la moneda entregada.
+        moneda_destino (str): Código de la moneda recibida.
+        monto (Decimal or str or int or float): Monto a convertir.
+        categoria (str or None): Categoría del cliente utilizada para
+            determinar el beneficio aplicable.
 
     Returns:
-        dict: Códigos normalizados, monto de origen, identificador y par de
-        la tasa, tipo y precio aplicado, subtotal, descuentos, total final,
-        mensaje de descuento y fecha de vigencia.
+        dict: Resultado detallado de la simulación.
 
     Raises:
-        SimulacionConversionError: Si el monto no es positivo, las monedas
-            coinciden, el par no incluye PYG o no hay una tasa vigente.
-        decimal.InvalidOperation: Si el monto no admite conversión decimal
-            o una operación decimal es inválida con el contexto activo.
-        decimal.DivisionByZero: Si se convierte desde PYG con precio de
-            venta cero y la excepción está habilitada en el contexto decimal.
+        SimulacionConversionError: Si los datos de la conversión no son válidos.
     """
     origen = moneda_origen.upper()
     destino = moneda_destino.upper()
@@ -111,15 +136,94 @@ def simular_conversion(moneda_origen, moneda_destino, monto):
     if monto_decimal <= 0:
         raise SimulacionConversionError("El monto debe ser mayor a cero.")
 
-    tasa, tasa_aplicada, tipo_tasa = obtener_tasa_para_simulacion(origen, destino)
+    tasa, tasa_aplicada, tipo_tasa = obtener_tasa_para_simulacion(
+        origen,
+        destino,
+    )
 
+    configuracion = obtener_beneficio_categoria(categoria)
+
+    porcentaje_beneficio = Decimal("0.00")
+    limite_mensual_pyg = Decimal("0.00")
+
+    if configuracion:
+        porcentaje_beneficio = configuracion.porcentaje_beneficio
+        limite_mensual_pyg = configuracion.limite_mensual_pyg
+
+    porcentaje_decimal = porcentaje_beneficio / Decimal("100")
+
+    # Sin beneficio: comportamiento original.
+    if not configuracion or porcentaje_beneficio == 0 or limite_mensual_pyg == 0:
+        if destino == PYG:
+            subtotal = monto_decimal * tasa_aplicada
+        else:
+            subtotal = monto_decimal / tasa_aplicada
+
+        return {
+            "moneda_origen": origen,
+            "moneda_destino": destino,
+            "monto_origen": redondear_monto(monto_decimal),
+            "tasa_id": tasa.id_tasa,
+            "par_tasa": f"{tasa.moneda_origen_id}/{tasa.moneda_destino_id}",
+            "tipo_tasa": tipo_tasa,
+            "tasa_aplicada": tasa_aplicada,
+            "subtotal": redondear_monto(subtotal),
+            "beneficio_porcentaje": porcentaje_beneficio,
+            "beneficio_monto": Decimal("0.00"),
+            "monto_beneficiado_pyg": Decimal("0.00"),
+            "limite_mensual_pyg": limite_mensual_pyg,
+            "total_final": redondear_monto(subtotal),
+            "mensaje_beneficio": "Sin beneficio aplicable.",
+            "fecha_vigencia": tasa.fecha_vigencia,
+        }
+
+    # Cliente vende divisa y recibe PYG.
     if destino == PYG:
         subtotal = monto_decimal * tasa_aplicada
+
+        monto_beneficiado_pyg = min(
+            subtotal,
+            limite_mensual_pyg,
+        )
+
+        beneficio_monto = monto_beneficiado_pyg * porcentaje_decimal
+        total_final = subtotal + beneficio_monto
+
+    # Cliente compra divisa entregando PYG.
     else:
         subtotal = monto_decimal / tasa_aplicada
 
-    descuento_monto = Decimal("0.00")
-    total_final = redondear_monto(subtotal - descuento_monto)
+        monto_beneficiado_pyg = min(
+            monto_decimal,
+            limite_mensual_pyg,
+        )
+
+        monto_normal_pyg = monto_decimal - monto_beneficiado_pyg
+
+        tasa_preferencial = tasa_aplicada * (
+            Decimal("1") - porcentaje_decimal
+        )
+
+        total_con_beneficio = (
+            monto_beneficiado_pyg / tasa_preferencial
+        )
+
+        total_sin_beneficio = (
+            monto_normal_pyg / tasa_aplicada
+        )
+
+        total_final = total_con_beneficio + total_sin_beneficio
+        beneficio_monto = total_final - subtotal
+
+    if monto_beneficiado_pyg < (
+        subtotal if destino == PYG else monto_decimal
+    ):
+        mensaje = (
+            "El beneficio se aplicó parcialmente hasta alcanzar "
+            "el límite mensual configurado."
+        )
+    else:
+        mensaje = "El beneficio se aplicó a la totalidad de la simulación."
 
     return {
         "moneda_origen": origen,
@@ -130,9 +234,11 @@ def simular_conversion(moneda_origen, moneda_destino, monto):
         "tipo_tasa": tipo_tasa,
         "tasa_aplicada": tasa_aplicada,
         "subtotal": redondear_monto(subtotal),
-        "descuento_porcentaje": Decimal("0.00"),
-        "descuento_monto": descuento_monto,
-        "total_final": total_final,
-        "mensaje_descuento": "Sin descuento configurado para esta simulación.",
+        "beneficio_porcentaje": porcentaje_beneficio,
+        "beneficio_monto": redondear_monto(beneficio_monto),
+        "monto_beneficiado_pyg": redondear_monto(monto_beneficiado_pyg),
+        "limite_mensual_pyg": redondear_monto(limite_mensual_pyg),
+        "total_final": redondear_monto(total_final),
+        "mensaje_beneficio": mensaje,
         "fecha_vigencia": tasa.fecha_vigencia,
     }

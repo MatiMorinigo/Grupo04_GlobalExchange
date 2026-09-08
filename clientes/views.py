@@ -9,8 +9,8 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from core.mixins import AdminRequiredMixin
-from .forms import ClienteForm
-from .models import Cliente
+from .forms import ClienteForm, ConfiguracionBeneficioCategoriaForm
+from .models import Cliente, ConfiguracionBeneficioCategoria
 from .permissions import EsAdministrador
 from .serializers import ClienteSerializer
 
@@ -341,3 +341,43 @@ class ClienteWebDeactivateView(AdminRequiredMixin, View):
             messages.info(request, "El cliente ya se encontraba inactivo.")
 
         return redirect("cliente-web-detail", id_cliente=cliente.id_cliente)
+
+class ConfiguracionBeneficioCategoriaListView(AdminRequiredMixin, ListView):
+    """
+    Muestra al administrador la configuración de beneficios
+    correspondiente a cada categoría de cliente.
+    """
+
+    model = ConfiguracionBeneficioCategoria
+    template_name = "clientes/configuracion_beneficios_list.html"
+    context_object_name = "configuraciones"
+
+    def get_queryset(self):
+        """
+        Obtiene las configuraciones ordenadas por categoría.
+
+        Returns:
+            QuerySet: Configuraciones de beneficios por categoría.
+        """
+        return ConfiguracionBeneficioCategoria.objects.order_by("categoria")
+
+class ConfiguracionBeneficioCategoriaUpdateView(AdminRequiredMixin, UpdateView):
+    """
+    Permite al administrador modificar el beneficio porcentual
+    y el límite mensual de una categoría de cliente.
+    """
+
+    model = ConfiguracionBeneficioCategoria
+    form_class = ConfiguracionBeneficioCategoriaForm
+    template_name = "clientes/configuracion_beneficios_form.html"
+    success_url = reverse_lazy("configuracion_beneficios")
+
+    def form_valid(self, form):
+        """
+        Guarda la configuración modificada y muestra un mensaje de éxito.
+        """
+        messages.success(
+            self.request,
+            "La configuración de beneficios fue actualizada correctamente.",
+        )
+        return super().form_valid(form)

@@ -327,16 +327,12 @@
 
                     <li class="nav-item">
 
-                        <span class="nav-link disabled text-body-secondary"
-                              aria-disabled="true"
-                              data-bs-toggle="tooltip"
-                              data-bs-title="Módulo aún no disponible">
-
-                            <i class="nav-icon bi bi-sliders"></i>
-
-                            <p>Configuración</p>
-
-                        </span>
+                        <li class="nav-item">
+                            <a href="{% url 'configuracion_beneficios' %}" class="nav-link">
+                                <i class="nav-icon bi bi-sliders"></i>
+                                <p>Configuración</p>
+                            </a>
+                        </li>
 
                     </li>
                     {% endif %}

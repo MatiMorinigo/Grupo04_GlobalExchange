@@ -60,6 +60,15 @@
                         {{ form.non_field_errors }}
                     </div>
                     {% endif %}
+                    <div class="alert alert-info mb-3">
+                        <strong>Categoría aplicada:</strong>
+                        {{ categoria_simulacion_label }}
+
+                        <div class="small mt-1">
+                            El beneficio correspondiente a esta categoría se aplicará
+                            automáticamente a la simulación.
+                        </div>
+                    </div>
 
                     <div class="mb-3">
                         <label for="{{ form.moneda_origen.id_for_label }}" class="form-label">
@@ -179,10 +188,10 @@
                                 </td>
                             </tr>
                             <tr>
-                                <th scope="row">Descuento aplicado</th>
+                                <th scope="row">Beneficio aplicado</th>
                                 <td class="simulation-amount">
-                                    {{ resultado.descuento_porcentaje|floatformat:2 }}%
-                                    · {{ resultado.moneda_destino }} {{ resultado.descuento_monto|floatformat:2 }}
+                                    {{ resultado.beneficio_porcentaje|floatformat:2 }}%
+                                    · {{ resultado.moneda_destino }} {{ resultado.beneficio_monto|floatformat:2 }}
                                 </td>
                             </tr>
                             <tr>
@@ -194,7 +203,7 @@
                 </div>
 
                 <div class="alert alert-info mt-3 mb-0" role="alert">
-                    {{ resultado.mensaje_descuento }}
+                    {{ resultado.mensaje_beneficio }}
                 </div>
 
                 {% else %}
@@ -219,5 +228,24 @@
     </div>
 
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const monedaOrigen = document.getElementById("id_moneda_origen");
+    const monedaDestino = document.getElementById("id_moneda_destino");
+
+    monedaOrigen.addEventListener("change", function () {
+        if (monedaOrigen.value && monedaOrigen.value !== "PYG") {
+            monedaDestino.value = "PYG";
+        }
+    });
+
+    monedaDestino.addEventListener("change", function () {
+        if (monedaDestino.value && monedaDestino.value !== "PYG") {
+            monedaOrigen.value = "PYG";
+        }
+    });
+});
+</script>
 
 {% endblock %}
