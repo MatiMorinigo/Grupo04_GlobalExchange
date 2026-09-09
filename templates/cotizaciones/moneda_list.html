@@ -4,9 +4,30 @@
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center">
         <h1>Monedas admitidas</h1>
-        <a href="{% url 'moneda-web-create' %}" class="btn btn-primary">
-            Nueva moneda
-        </a>
+        <div class="d-flex align-items-center gap-2">
+            <form method="get" class="d-inline">
+                <select
+                    name="estado"
+                    class="form-select form-select-sm"
+                    style="width: 12rem"
+                    aria-label="Filtrar por estado"
+                    onchange="this.form.submit()"
+                >
+                    <option value="" {% if not estado %}selected{% endif %}>
+                        Habilitadas
+                    </option>
+                    <option value="todas" {% if estado == "todas" %}selected{% endif %}>
+                        Todas
+                    </option>
+                    <option value="deshabilitadas" {% if estado == "deshabilitadas" %}selected{% endif %}>
+                        Deshabilitadas
+                    </option>
+                </select>
+            </form>
+            <a href="{% url 'moneda-web-create' %}" class="btn btn-primary">
+                Nueva moneda
+            </a>
+        </div>
     </div>
 
     <table class="table table-bordered mt-3">
@@ -48,6 +69,17 @@
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-outline-danger">
                             Deshabilitar
+                        </button>
+                    </form>
+                    {% else %}
+                    <form
+                        method="post"
+                        action="{% url 'moneda-web-activate' moneda.codigo %}"
+                        class="d-inline"
+                    >
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-success">
+                            Habilitar
                         </button>
                     </form>
                     {% endif %}

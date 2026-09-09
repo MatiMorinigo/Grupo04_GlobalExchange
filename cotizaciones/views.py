@@ -29,24 +29,36 @@ class MonedaWebListView(AdminRequiredMixin, ListView):
     context_object_name = "monedas"
 
     def get_queryset(self):
-        """Obtiene todas las monedas ordenadas por código.
+        """Filtra las monedas según el parámetro GET 'estado' y las ordena por código.
+
+        Sin parámetro (o con cualquier valor distinto de 'todas' o
+        'deshabilitadas') se listan solo las monedas habilitadas.
 
         Returns:
-            django.db.models.QuerySet: Monedas ordenadas por código.
+            django.db.models.QuerySet: Monedas filtradas y ordenadas por código.
         """
-        return Moneda.objects.order_by("codigo")
+        queryset = Moneda.objects.order_by("codigo")
+        estado = self.request.GET.get("estado", "").strip()
+
+        if estado == "todas":
+            return queryset
+        if estado == "deshabilitadas":
+            return queryset.filter(activa=False)
+        return queryset.filter(activa=True)
 
     def get_context_data(self, **kwargs):
-        """Marca el menú de monedas como activo en el listado.
+        """Marca el menú de monedas como activo y expone el filtro de estado.
 
         Args:
             **kwargs: Datos adicionales del contexto de la vista base.
 
         Returns:
-            dict: Contexto del listado con la selección del menú de monedas.
+            dict: Contexto del listado con la selección del menú de monedas
+            y el filtro de estado actualmente aplicado.
         """
         context = super().get_context_data(**kwargs)
         context["active_menu"] = "monedas"
+        context["estado"] = self.request.GET.get("estado", "").strip()
         return context
 
 
@@ -202,6 +214,45 @@ class MonedaWebDeactivateView(AdminRequiredMixin, View):
             messages.success(request, "Moneda deshabilitada correctamente.")
         else:
             messages.info(request, "La moneda ya se encontraba deshabilitada.")
+
+        return redirect("moneda-web-list")
+
+
+class MonedaWebActivateView(AdminRequiredMixin, View):
+    """Permite a administradores habilitar monedas desde la interfaz web."""
+    def post(self, request, codigo):
+        """Habilita la moneda y redirige al listado de monedas.
+
+        Añade un mensaje de éxito si cambia el estado o un mensaje informativo
+        si la moneda ya estaba habilitada. Registra la acción en la
+        auditoría solo cuando efectivamente se habilita la moneda.
+
+        Args:
+            request (django.http.HttpRequest): Solicitud utilizada para registrar
+                los mensajes y el usuario de la operación.
+            codigo (str): Código de la moneda que se desea habilitar.
+
+        Returns:
+            django.http.HttpResponseRedirect: Redirección al listado de monedas.
+
+        Raises:
+            django.http.Http404: Si la moneda no existe.
+        """
+        moneda = get_object_or_404(Moneda, codigo=codigo)
+
+        if not moneda.activa:
+            moneda.activa = True
+            moneda.save(update_fields=["activa"])
+            AuditoriaMoneda.objects.registrar(
+                moneda=moneda,
+                accion=AccionAuditoriaMoneda.HABILITACION,
+                realizado_por=request.user if request.user.is_authenticated else None,
+                datos_anteriores={"activa": False},
+                datos_nuevos={"activa": True},
+            )
+            messages.success(request, "Moneda habilitada correctamente.")
+        else:
+            messages.info(request, "La moneda ya se encontraba habilitada.")
 
         return redirect("moneda-web-list")
 

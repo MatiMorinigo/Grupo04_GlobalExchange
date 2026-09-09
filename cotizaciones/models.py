@@ -145,6 +145,7 @@ class AccionAuditoriaMoneda(models.TextChoices):
     CREACION = "CREACION", "Creación"
     MODIFICACION = "MODIFICACION", "Modificación"
     DESHABILITACION = "DESHABILITACION", "Deshabilitación"
+    HABILITACION = "HABILITACION", "Habilitación"
 
 
 class AuditoriaMonedaManager(models.Manager):

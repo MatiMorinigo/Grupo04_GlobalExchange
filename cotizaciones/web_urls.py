@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     CotizacionWebListView,
+    MonedaWebActivateView,
     MonedaWebCreateView,
     MonedaWebDeactivateView,
     MonedaWebListView,
@@ -20,5 +21,10 @@ urlpatterns = [
         "monedas/<str:codigo>/deshabilitar/",
         MonedaWebDeactivateView.as_view(),
         name="moneda-web-deactivate",
+    ),
+    path(
+        "monedas/<str:codigo>/habilitar/",
+        MonedaWebActivateView.as_view(),
+        name="moneda-web-activate",
     ),
 ]

@@ -686,6 +686,77 @@ class MonedaWebViewTests(TestCase):
             0,
         )
 
+    def test_moneda_activate_enables_currency_and_logs_auditoria(self):
+        self.usd.activa = False
+        self.usd.save(update_fields=["activa"])
+
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            self.client.post(
+                reverse("moneda-web-activate", kwargs={"codigo": "USD"}),
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.usd.refresh_from_db()
+        self.assertTrue(self.usd.activa)
+
+        auditoria = AuditoriaMoneda.objects.get(moneda=self.usd, accion="HABILITACION")
+        self.assertEqual(auditoria.realizado_por, self.user)
+
+    def test_moneda_activate_twice_shows_info_message_without_duplicate_log(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            self.client.post(
+                reverse("moneda-web-activate", kwargs={"codigo": "USD"}),
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertEqual(
+            AuditoriaMoneda.objects.filter(moneda=self.usd, accion="HABILITACION").count(),
+            0,
+        )
+
+    def test_moneda_list_default_filters_only_active(self):
+        eur, _ = Moneda.objects.get_or_create(
+            codigo="EUR", defaults={"nombre": "Euro", "simbolo": "€"}
+        )
+        eur.activa = False
+        eur.save(update_fields=["activa"])
+
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            response = self.client.get(reverse("moneda-web-list"), HTTP_HOST="127.0.0.1")
+
+        self.assertContains(response, "USD")
+        self.assertNotContains(response, "EUR")
+
+    def test_moneda_list_estado_todas_shows_all(self):
+        eur, _ = Moneda.objects.get_or_create(
+            codigo="EUR", defaults={"nombre": "Euro", "simbolo": "€"}
+        )
+        eur.activa = False
+        eur.save(update_fields=["activa"])
+
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            response = self.client.get(
+                reverse("moneda-web-list"), {"estado": "todas"}, HTTP_HOST="127.0.0.1"
+            )
+
+        self.assertContains(response, "USD")
+        self.assertContains(response, "EUR")
+
+    def test_moneda_list_estado_deshabilitadas_shows_only_inactive(self):
+        eur, _ = Moneda.objects.get_or_create(
+            codigo="EUR", defaults={"nombre": "Euro", "simbolo": "€"}
+        )
+        eur.activa = False
+        eur.save(update_fields=["activa"])
+
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            response = self.client.get(
+                reverse("moneda-web-list"), {"estado": "deshabilitadas"}, HTTP_HOST="127.0.0.1"
+            )
+
+        self.assertNotContains(response, "USD")
+        self.assertContains(response, "EUR")
+
     def test_moneda_form_rejects_duplicate_codigo(self):
         with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
             response = self.client.post(
