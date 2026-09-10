@@ -734,7 +734,7 @@ class TasaCambioCrearViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(self.usd, response.context["form"].fields["moneda_origen"].queryset)
-        self.assertIn(self.pyg, response.context["form"].fields["moneda_destino"].queryset)
+        self.assertNotIn(self.pyg, response.context["form"].fields["moneda_origen"].queryset)
 
     def test_tasa_crear_guarda_nueva_tasa_vigente_y_logs_auditoria(self):
         with patch("core.mixins.AnalistaCambiarioRequiredMixin.test_func", return_value=True):
@@ -742,7 +742,6 @@ class TasaCambioCrearViewTests(TestCase):
                 reverse("tasa-web-crear"),
                 {
                     "moneda_origen": "USD",
-                    "moneda_destino": "PYG",
                     "precio_compra": "7200.0000",
                     "precio_venta": "7350.0000",
                 },
@@ -766,13 +765,12 @@ class TasaCambioCrearViewTests(TestCase):
         self.assertEqual(auditoria.precio_venta_nuevo, Decimal("7350.0000"))
         self.assertEqual(auditoria.realizado_por, self.user)
 
-    def test_tasa_crear_rechaza_monedas_iguales(self):
+    def test_tasa_crear_rechaza_pyg_como_moneda_extranjera(self):
         with patch("core.mixins.AnalistaCambiarioRequiredMixin.test_func", return_value=True):
             response = self.client.post(
                 reverse("tasa-web-crear"),
                 {
-                    "moneda_origen": "USD",
-                    "moneda_destino": "USD",
+                    "moneda_origen": "PYG",
                     "precio_compra": "7200.0000",
                     "precio_venta": "7350.0000",
                 },
@@ -781,6 +779,21 @@ class TasaCambioCrearViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(TasaCambio.objects.exists())
+
+    def test_tasa_crear_fija_pyg_como_moneda_destino(self):
+        with patch("core.mixins.AnalistaCambiarioRequiredMixin.test_func", return_value=True):
+            self.client.post(
+                reverse("tasa-web-crear"),
+                {
+                    "moneda_origen": "USD",
+                    "precio_compra": "7200.0000",
+                    "precio_venta": "7350.0000",
+                },
+                HTTP_HOST="127.0.0.1",
+            )
+
+        nueva_tasa = TasaCambio.objects.get(vigente=True)
+        self.assertEqual(nueva_tasa.moneda_destino, self.pyg)
 
     def test_tasa_crear_rechaza_par_con_tasa_vigente_existente(self):
         TasaCambio.objects.create(
@@ -795,7 +808,6 @@ class TasaCambioCrearViewTests(TestCase):
                 reverse("tasa-web-crear"),
                 {
                     "moneda_origen": "USD",
-                    "moneda_destino": "PYG",
                     "precio_compra": "7250.0000",
                     "precio_venta": "7400.0000",
                 },

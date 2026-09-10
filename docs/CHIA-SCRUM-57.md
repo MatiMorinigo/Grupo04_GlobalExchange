@@ -24,6 +24,12 @@ Se utilizó IA para implementar, sobre la app `cotizaciones` ya existente, la mo
 - Se usó `select_for_update()` sobre la tasa vigente al momento de confirmar, dentro de una transacción atómica, para evitar una condición de carrera si dos personas intentan modificar la misma tasa al mismo tiempo; si la tasa ya no está vigente en ese momento, la operación falla con 404 en vez de crear un estado inconsistente.
 - Se limitó el alcance a la interfaz web: no se agregó un endpoint de escritura en la API REST de `cotizaciones`, ya que la historia describe un flujo de usuario (analista cambiario) y no existía previamente ningún endpoint de escritura para `TasaCambio` que extender.
 
+## Bug encontrado y corregido: dirección del par en `TasaCambioCrearForm`
+- Al agregar `TasaCambioCrearView`/`TasaCambioCrearForm` (para permitir cargar la tasa inicial de un par), el formulario dejaba elegir **cualquier** combinación de moneda de origen y destino, incluyendo PYG como origen. Sin embargo, todo el resto del sistema (`cotizaciones/services.py::obtener_tasa_para_simulacion`, líneas 86-108, y `simular_conversion`) asume que una `TasaCambio` siempre se guarda como **moneda extranjera → PYG**, nunca al revés: busca la fila `origen=<divisa>, destino=PYG` tanto para convertir hacia PYG (con `precio_compra`) como desde PYG (con `precio_venta`, sobre esa misma fila).
+- Detectado en pruebas manuales: se creó una tasa `PYG → USD` desde la web y el simulador de conversión falló con "No existe una tasa vigente para el par seleccionado", aunque existía una fila para ese par, porque el simulador la busca en la dirección `USD → PYG` y no la encuentra.
+- Corrección aplicada: `TasaCambioCrearForm` ya no deja elegir la moneda de destino. Ahora solo pide la "moneda extranjera" (`moneda_origen`, con PYG excluido del queryset) y fija `moneda_destino` en PYG dentro de `clean()`, validando además que PYG exista y esté habilitada. El template `tasa_crear_form.html` refleja esto quitando el selector de destino y mostrando el texto fijo "La tasa se registrará frente al guaraní paraguayo (PYG)". Así, estructuralmente ya no se puede volver a cargar un par en la dirección incorrecta.
+- La tasa `PYG → USD` cargada por error durante las pruebas se borró manualmente vía `manage.py shell` antes de este arreglo; no quedó como dato de prueba ni fixture.
+
 ## Validaciones realizadas
-- `python manage.py test cotizaciones` (29 tests) y `python manage.py test clientes` (14 tests, regresión) en verde.
+- `python manage.py test cotizaciones` (38 tests, incluye la creación de tasas y su corrección) y `python manage.py test clientes` (14 tests, regresión) en verde.
 - `python manage.py makemigrations --check` sin cambios pendientes.

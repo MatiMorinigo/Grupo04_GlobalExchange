@@ -43,26 +43,20 @@ class TasaCambioEditarForm(forms.Form):
 
 
 class TasaCambioCrearForm(forms.Form):
-    """Recoge el par de monedas y los precios iniciales para crear una tasa de cambio."""
+    """Recoge la moneda extranjera y los precios iniciales para crear una tasa de cambio.
+
+    La moneda de destino no es seleccionable: el sistema siempre registra y
+    busca las tasas como moneda extranjera/PYG (ver
+    ``services.obtener_tasa_para_simulacion``), así que se fija en PYG.
+    """
     moneda_origen = forms.ModelChoiceField(
         queryset=Moneda.objects.none(),
         to_field_name="codigo",
-        label="Moneda de origen",
+        label="Moneda extranjera",
         empty_label="Seleccione una moneda",
         error_messages={
-            "required": "Seleccione la moneda de origen.",
-            "invalid_choice": "La moneda de origen seleccionada no es válida.",
-        },
-        widget=forms.Select(attrs={"class": "form-select"}),
-    )
-    moneda_destino = forms.ModelChoiceField(
-        queryset=Moneda.objects.none(),
-        to_field_name="codigo",
-        label="Moneda de destino",
-        empty_label="Seleccione una moneda",
-        error_messages={
-            "required": "Seleccione la moneda de destino.",
-            "invalid_choice": "La moneda de destino seleccionada no es válida.",
+            "required": "Seleccione la moneda extranjera.",
+            "invalid_choice": "La moneda seleccionada no es válida.",
         },
         widget=forms.Select(attrs={"class": "form-select"}),
     )
@@ -94,34 +88,40 @@ class TasaCambioCrearForm(forms.Form):
     )
 
     def __init__(self, *args, **kwargs):
-        """Inicializa el formulario y carga las monedas activas ordenadas por código.
+        """Inicializa el formulario y carga las monedas extranjeras activas ordenadas por código.
+
+        Excluye PYG de las opciones de moneda extranjera, ya que la moneda de
+        destino se fija en PYG y una tasa PYG/PYG no tiene sentido.
 
         Args:
             *args: Argumentos posicionales del formulario base de Django.
             **kwargs: Opciones del formulario base, como datos e iniciales.
         """
         super().__init__(*args, **kwargs)
-        monedas = Moneda.objects.filter(activa=True).order_by("codigo")
-        self.fields["moneda_origen"].queryset = monedas
-        self.fields["moneda_destino"].queryset = monedas
+        self.fields["moneda_origen"].queryset = (
+            Moneda.objects.filter(activa=True).exclude(codigo="PYG").order_by("codigo")
+        )
 
     def clean(self):
-        """Valida que las monedas sean distintas y que el par no tenga ya una tasa vigente.
+        """Fija la moneda de destino en PYG y valida que el par no tenga ya una tasa vigente.
 
         Returns:
-            dict: Datos limpiados del formulario.
+            dict: Datos limpiados del formulario, con `moneda_destino` agregado.
 
         Raises:
-            django.forms.ValidationError: Si ambas monedas coinciden o si ya
-                existe una tasa vigente para el par seleccionado.
+            django.forms.ValidationError: Si PYG no está habilitada como
+                moneda, o si ya existe una tasa vigente para el par.
         """
         cleaned_data = super().clean()
         origen = cleaned_data.get("moneda_origen")
-        destino = cleaned_data.get("moneda_destino")
 
-        if origen and destino:
-            if origen.codigo == destino.codigo:
-                raise forms.ValidationError("La moneda de origen y destino deben ser distintas.")
+        if origen:
+            destino = Moneda.objects.filter(codigo="PYG", activa=True).first()
+            if not destino:
+                raise forms.ValidationError(
+                    "El guaraní paraguayo (PYG) debe estar habilitado para registrar tasas de cambio."
+                )
+            cleaned_data["moneda_destino"] = destino
 
             if TasaCambio.objects.filter(
                 vigente=True, moneda_origen=origen, moneda_destino=destino
