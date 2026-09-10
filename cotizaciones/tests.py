@@ -68,12 +68,12 @@ class CotizacionWebViewTests(TestCase):
         self.assertNotIn("7350,0000", content)
         self.assertNotIn(",0000", content)
 
-    def test_cotizaciones_list_shows_variation(self):
+    def test_cotizaciones_list_shows_variation_arrows_per_price(self):
         TasaCambio.objects.create(
             moneda_origen=self.usd,
             moneda_destino=self.pyg,
             precio_compra=Decimal("7000.0000"),
-            precio_venta=Decimal("7100.0000"),
+            precio_venta=Decimal("7400.0000"),
             vigente=False,
             fecha_vigencia=timezone.now() - timezone.timedelta(days=1),
         )
@@ -88,7 +88,24 @@ class CotizacionWebViewTests(TestCase):
         content = response.content.decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Subió", content)
+        self.assertNotIn("Variación</th>", content)
+        self.assertIn("bi-arrow-up-short text-success", content)
+        self.assertIn("bi-arrow-down-short text-danger", content)
+
+    def test_cotizaciones_list_no_arrow_without_previous_rate(self):
+        TasaCambio.objects.create(
+            moneda_origen=self.usd,
+            moneda_destino=self.pyg,
+            precio_compra=Decimal("7200.0000"),
+            precio_venta=Decimal("7350.0000"),
+        )
+
+        response = self.client.get(reverse("cotizacion-web-list"), HTTP_HOST="127.0.0.1")
+        content = response.content.decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("bi-arrow-up-short", content)
+        self.assertNotIn("bi-arrow-down-short", content)
 
 
 class CotizacionApiTests(TestCase):
@@ -685,6 +702,110 @@ class TasaCambioEditarViewTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC)
+class TasaCambioCrearViewTests(TestCase):
+    """Prueba la creación de tasas de cambio iniciales y su log de auditoría."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="analista",
+            password="testpass123",
+        )
+        self.client.force_login(self.user)
+
+        self.pyg, _ = Moneda.objects.get_or_create(
+            codigo="PYG",
+            defaults={"nombre": "Guaraní paraguayo", "simbolo": "Gs"},
+        )
+        self.usd, _ = Moneda.objects.get_or_create(
+            codigo="USD",
+            defaults={"nombre": "Dólar estadounidense", "simbolo": "US$"},
+        )
+
+    def test_tasa_crear_requiere_rol_analista_o_administrador(self):
+        with patch("core.mixins.AnalistaCambiarioRequiredMixin.test_func", return_value=False):
+            response = self.client.get(reverse("tasa-web-crear"), HTTP_HOST="127.0.0.1")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_tasa_crear_get_muestra_formulario(self):
+        with patch("core.mixins.AnalistaCambiarioRequiredMixin.test_func", return_value=True):
+            response = self.client.get(reverse("tasa-web-crear"), HTTP_HOST="127.0.0.1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.usd, response.context["form"].fields["moneda_origen"].queryset)
+        self.assertIn(self.pyg, response.context["form"].fields["moneda_destino"].queryset)
+
+    def test_tasa_crear_guarda_nueva_tasa_vigente_y_logs_auditoria(self):
+        with patch("core.mixins.AnalistaCambiarioRequiredMixin.test_func", return_value=True):
+            response = self.client.post(
+                reverse("tasa-web-crear"),
+                {
+                    "moneda_origen": "USD",
+                    "moneda_destino": "PYG",
+                    "precio_compra": "7200.0000",
+                    "precio_venta": "7350.0000",
+                },
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertRedirects(response, reverse("cotizacion-web-list"))
+
+        nueva_tasa = TasaCambio.objects.get(vigente=True)
+        self.assertEqual(nueva_tasa.moneda_origen, self.usd)
+        self.assertEqual(nueva_tasa.moneda_destino, self.pyg)
+        self.assertEqual(nueva_tasa.precio_compra, Decimal("7200.0000"))
+        self.assertEqual(nueva_tasa.precio_venta, Decimal("7350.0000"))
+        self.assertEqual(nueva_tasa.modificado_por, self.user)
+
+        auditoria = AuditoriaTasaCambio.objects.get(tasa_nueva=nueva_tasa)
+        self.assertIsNone(auditoria.tasa_anterior)
+        self.assertIsNone(auditoria.precio_compra_anterior)
+        self.assertIsNone(auditoria.precio_venta_anterior)
+        self.assertEqual(auditoria.precio_compra_nuevo, Decimal("7200.0000"))
+        self.assertEqual(auditoria.precio_venta_nuevo, Decimal("7350.0000"))
+        self.assertEqual(auditoria.realizado_por, self.user)
+
+    def test_tasa_crear_rechaza_monedas_iguales(self):
+        with patch("core.mixins.AnalistaCambiarioRequiredMixin.test_func", return_value=True):
+            response = self.client.post(
+                reverse("tasa-web-crear"),
+                {
+                    "moneda_origen": "USD",
+                    "moneda_destino": "USD",
+                    "precio_compra": "7200.0000",
+                    "precio_venta": "7350.0000",
+                },
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(TasaCambio.objects.exists())
+
+    def test_tasa_crear_rechaza_par_con_tasa_vigente_existente(self):
+        TasaCambio.objects.create(
+            moneda_origen=self.usd,
+            moneda_destino=self.pyg,
+            precio_compra=Decimal("7200.0000"),
+            precio_venta=Decimal("7350.0000"),
+        )
+
+        with patch("core.mixins.AnalistaCambiarioRequiredMixin.test_func", return_value=True):
+            response = self.client.post(
+                reverse("tasa-web-crear"),
+                {
+                    "moneda_origen": "USD",
+                    "moneda_destino": "PYG",
+                    "precio_compra": "7250.0000",
+                    "precio_venta": "7400.0000",
+                },
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(TasaCambio.objects.count(), 1)
+
+
 class CotizacionListEditarButtonTests(TestCase):
     """Prueba que el botón de edición de tasas solo se muestre a roles autorizados."""
 
@@ -724,3 +845,18 @@ class CotizacionListEditarButtonTests(TestCase):
             reverse("tasa-web-editar", kwargs={"id_tasa": self.tasa.id_tasa}),
             content,
         )
+
+    def test_boton_crear_oculto_sin_rol_autorizado(self):
+        response = self.client.get(reverse("cotizacion-web-list"), HTTP_HOST="127.0.0.1")
+        content = response.content.decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(reverse("tasa-web-crear"), content)
+
+    def test_boton_crear_visible_con_rol_autorizado(self):
+        with patch("cotizaciones.views.tiene_rol", return_value=True):
+            response = self.client.get(reverse("cotizacion-web-list"), HTTP_HOST="127.0.0.1")
+        content = response.content.decode("utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(reverse("tasa-web-crear"), content)

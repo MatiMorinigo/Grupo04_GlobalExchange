@@ -141,6 +141,18 @@
 
             </a>
 
+            {% if puede_editar_tasas %}
+            <a href="{% url 'tasa-web-crear' %}"
+               class="btn btn-outline-primary btn-sm">
+
+                <i class="bi bi-plus-lg me-1"
+                   aria-hidden="true"></i>
+
+                Crear tasa
+
+            </a>
+            {% endif %}
+
         </form>
 
     </div>
@@ -161,7 +173,6 @@
                         <th>Moneda destino</th>
                         <th class="text-end">Compra</th>
                         <th class="text-end">Venta</th>
-                        <th>Variación</th>
                         <th class="text-end">Actualización</th>
                         {% if puede_editar_tasas %}
                         <th>Acciones</th>
@@ -197,32 +208,22 @@
 
                         <td class="text-end rate-value">
                             {{ tasa.moneda_destino.simbolo }} {{ tasa.precio_compra|floatformat:0 }}
+                            {% with variacion=tasa.variacion_compra %}
+                                {% if variacion > 0 %}
+                                <i class="bi bi-arrow-up-short text-success" title="Subió" aria-hidden="true"></i>
+                                {% elif variacion < 0 %}
+                                <i class="bi bi-arrow-down-short text-danger" title="Bajó" aria-hidden="true"></i>
+                                {% endif %}
+                            {% endwith %}
                         </td>
 
                         <td class="text-end rate-value">
                             {{ tasa.moneda_destino.simbolo }} {{ tasa.precio_venta|floatformat:0 }}
-                        </td>
-
-                        <td>
                             {% with variacion=tasa.variacion_venta %}
                                 {% if variacion > 0 %}
-                                <span class="badge text-bg-success">
-                                    <i class="bi bi-arrow-up-short" aria-hidden="true"></i>
-                                    Subió
-                                </span>
+                                <i class="bi bi-arrow-up-short text-success" title="Subió" aria-hidden="true"></i>
                                 {% elif variacion < 0 %}
-                                <span class="badge text-bg-danger">
-                                    <i class="bi bi-arrow-down-short" aria-hidden="true"></i>
-                                    Bajó
-                                </span>
-                                {% elif variacion == 0 %}
-                                <span class="badge text-bg-secondary">
-                                    Sin cambios
-                                </span>
-                                {% else %}
-                                <span class="badge text-bg-secondary">
-                                    Sin historial
-                                </span>
+                                <i class="bi bi-arrow-down-short text-danger" title="Bajó" aria-hidden="true"></i>
                                 {% endif %}
                             {% endwith %}
                         </td>
@@ -278,6 +279,18 @@
                 Limpiar filtros
 
             </a>
+
+            {% if puede_editar_tasas %}
+            <a href="{% url 'tasa-web-crear' %}"
+               class="btn btn-primary">
+
+                <i class="bi bi-plus-lg me-1"
+                   aria-hidden="true"></i>
+
+                Crear tasa
+
+            </a>
+            {% endif %}
 
         </div>
 

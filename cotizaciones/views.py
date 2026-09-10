@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.db import transaction
 from django.db.models import Max
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import FormView, ListView
 from rest_framework import generics, status
@@ -10,7 +11,7 @@ from rest_framework.views import APIView
 
 from core.keycloak import tiene_rol
 from core.mixins import AnalistaCambiarioRequiredMixin
-from .forms import SimulacionConversionForm, TasaCambioEditarForm
+from .forms import SimulacionConversionForm, TasaCambioCrearForm, TasaCambioEditarForm
 from .models import AuditoriaTasaCambio, Moneda, TasaCambio
 from .serializers import MonedaSerializer, SimulacionConversionSerializer, TasaCambioSerializer
 from .services import SimulacionConversionError, simular_conversion
@@ -219,6 +220,60 @@ class TasaCambioEditarView(AnalistaCambiarioRequiredMixin, View):
 
         messages.success(request, "Tasa de cambio modificada correctamente.")
         return redirect("cotizacion-web-list")
+
+
+class TasaCambioCrearView(AnalistaCambiarioRequiredMixin, FormView):
+    """Permite a analistas cambiarios y administradores crear una tasa de cambio inicial."""
+    form_class = TasaCambioCrearForm
+    template_name = "cotizaciones/tasa_crear_form.html"
+    success_url = reverse_lazy("cotizacion-web-list")
+
+    def get_context_data(self, **kwargs):
+        """Marca el menú de cotizaciones como activo en el formulario de creación.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto del formulario con la selección del menú de cotizaciones.
+        """
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cotizaciones"
+        return context
+
+    def form_valid(self, form):
+        """Crea la tasa de cambio inicial del par de monedas y registra la auditoría.
+
+        Args:
+            form (TasaCambioCrearForm): Formulario validado con el par de
+                monedas y los precios iniciales.
+
+        Returns:
+            django.http.HttpResponseRedirect: Redirección al listado de
+            cotizaciones después de crear la tasa.
+        """
+        usuario = self.request.user if self.request.user.is_authenticated else None
+        nueva_tasa = TasaCambio.objects.create(
+            moneda_origen=form.cleaned_data["moneda_origen"],
+            moneda_destino=form.cleaned_data["moneda_destino"],
+            precio_compra=form.cleaned_data["precio_compra"],
+            precio_venta=form.cleaned_data["precio_venta"],
+            vigente=True,
+            modificado_por=usuario,
+        )
+
+        AuditoriaTasaCambio.objects.create(
+            tasa_nueva=nueva_tasa,
+            tasa_anterior=None,
+            precio_compra_anterior=None,
+            precio_venta_anterior=None,
+            precio_compra_nuevo=nueva_tasa.precio_compra,
+            precio_venta_nuevo=nueva_tasa.precio_venta,
+            realizado_por=usuario,
+        )
+
+        messages.success(self.request, "Tasa de cambio creada correctamente.")
+        return super().form_valid(form)
 
 
 class SimulacionConversionApiView(APIView):
