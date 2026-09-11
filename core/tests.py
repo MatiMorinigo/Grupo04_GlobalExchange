@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib import messages
 from django.contrib.auth.models import AnonymousUser, User
 from django.contrib.messages.storage.fallback import FallbackStorage
@@ -78,11 +80,53 @@ class HomeViewTests(SimpleTestCase):
 
     @override_settings(APP_ENV="Producción")
     def test_environment_indicator_is_hidden_in_production(self):
-        self.assertEqual(app_environment(None), {"app_environment": "", "es_administrador": False})
+        self.assertEqual(app_environment(None), {"app_environment": "", "es_administrador": False, "rol_usuario": ""})
 
     @override_settings(APP_ENV="Desarrollo")
     def test_environment_indicator_is_visible_outside_production(self):
-        self.assertEqual(app_environment(None), {"app_environment": "Desarrollo", "es_administrador": False})
+        self.assertEqual(app_environment(None), {"app_environment": "Desarrollo", "es_administrador": False, "rol_usuario": ""})
+
+    @patch("core.keycloak.obtener_roles", return_value=["administrador"])
+    @patch("core.context_processors.obtener_roles", return_value=["administrador"])
+    def test_admin_header_shows_email_and_role_without_users_module(self, context_roles, keycloak_roles):
+        user = User(username="admin", email="admin@example.com", first_name="Ana")
+        response = self.render_home(user)
+        content = response.content.decode("utf-8")
+        header = content.split('<nav class="app-header', 1)[1].split("</nav>", 1)[0]
+
+        self.assertIn("admin@example.com", header)
+        self.assertIn("Administrador", header)
+        self.assertLess(header.index("admin@example.com"), header.index("Administrador"))
+        self.assertNotIn("Desarrollo", header)
+        self.assertNotIn("Usuarios", content)
+        self.assertIn(reverse("cliente-web-list"), content)
+        self.assertIn("Gestionar solicitudes", content)
+
+    @patch("core.context_processors.obtener_roles")
+    def test_role_labels_exclude_keycloak_internal_roles(self, obtener_roles):
+        request = self.factory.get("/")
+        request.user = User(username="operador")
+        request.session = {}
+        for rol, etiqueta in (
+            ("administrador", "Administrador"),
+            ("analista_cambiario", "Analista cambiario"),
+            ("cajero", "Cajero"),
+            ("tesorero", "Tesorero"),
+            ("usuario", "Usuario"),
+        ):
+            with self.subTest(rol=rol):
+                obtener_roles.return_value = ["offline_access", rol, "uma_authorization", "default-roles-global-exchange"]
+                context = app_environment(request)
+                self.assertEqual(context["rol_usuario"], etiqueta)
+                self.assertEqual(context["es_administrador"], rol == "administrador")
+        obtener_roles.return_value = ["usuario", "cajero"]
+        self.assertEqual(app_environment(request)["rol_usuario"], "Cajero · Usuario")
+
+    def test_missing_token_does_not_invent_a_role(self):
+        response = self.render_home(User(username="sin_token"))
+        content = response.content.decode("utf-8")
+        self.assertIn("Rol no disponible", content)
+        self.assertNotIn(reverse("cliente-web-list"), content)
 
     def test_error_messages_use_bootstrap_danger_class(self):
         request = self.factory.get("/")
