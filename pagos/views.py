@@ -86,6 +86,8 @@ class MetodoPagoWebCreateView(ClienteActivoRequiredMixin, CreateView):
                 "titular": self.object.titular,
                 "ultimos_cuatro_digitos": self.object.ultimos_cuatro_digitos,
                 "fecha_vencimiento": self.object.fecha_vencimiento,
+                "proveedor_billetera": self.object.proveedor_billetera,
+                "numero_billetera": self.object.numero_billetera,
             },
         )
         messages.success(self.request, "Método de pago registrado correctamente.")
@@ -139,6 +141,8 @@ class MetodoPagoWebUpdateView(ClienteActivoRequiredMixin, UpdateView):
             "titular": metodo_pago.titular,
             "ultimos_cuatro_digitos": metodo_pago.ultimos_cuatro_digitos,
             "fecha_vencimiento": metodo_pago.fecha_vencimiento,
+            "proveedor_billetera": metodo_pago.proveedor_billetera,
+            "numero_billetera": metodo_pago.numero_billetera,
         }
         return metodo_pago
 
@@ -162,6 +166,8 @@ class MetodoPagoWebUpdateView(ClienteActivoRequiredMixin, UpdateView):
                 "titular": self.object.titular,
                 "ultimos_cuatro_digitos": self.object.ultimos_cuatro_digitos,
                 "fecha_vencimiento": self.object.fecha_vencimiento,
+                "proveedor_billetera": self.object.proveedor_billetera,
+                "numero_billetera": self.object.numero_billetera,
             },
         )
         messages.success(self.request, "Método de pago actualizado correctamente.")
@@ -313,6 +319,8 @@ class MetodoPagoWebDeleteView(ClienteActivoRequiredMixin, DeleteView):
                 "titular": self.object.titular,
                 "ultimos_cuatro_digitos": self.object.ultimos_cuatro_digitos,
                 "fecha_vencimiento": self.object.fecha_vencimiento,
+                "proveedor_billetera": self.object.proveedor_billetera,
+                "numero_billetera": self.object.numero_billetera,
                 "activo": self.object.activo,
             },
         )
@@ -380,6 +388,8 @@ class MetodoPagoListCreateView(generics.ListCreateAPIView):
                 "titular": metodo_pago.titular,
                 "ultimos_cuatro_digitos": metodo_pago.ultimos_cuatro_digitos,
                 "fecha_vencimiento": metodo_pago.fecha_vencimiento,
+                "proveedor_billetera": metodo_pago.proveedor_billetera,
+                "numero_billetera": metodo_pago.numero_billetera,
             },
         )
 
@@ -416,6 +426,8 @@ class MetodoPagoDetailView(generics.RetrieveUpdateDestroyAPIView):
             "titular": instancia.titular,
             "ultimos_cuatro_digitos": instancia.ultimos_cuatro_digitos,
             "fecha_vencimiento": instancia.fecha_vencimiento,
+            "proveedor_billetera": instancia.proveedor_billetera,
+            "numero_billetera": instancia.numero_billetera,
         }
         metodo_pago = serializer.save()
         AuditoriaMetodoPago.objects.registrar(
@@ -427,6 +439,8 @@ class MetodoPagoDetailView(generics.RetrieveUpdateDestroyAPIView):
                 "titular": metodo_pago.titular,
                 "ultimos_cuatro_digitos": metodo_pago.ultimos_cuatro_digitos,
                 "fecha_vencimiento": metodo_pago.fecha_vencimiento,
+                "proveedor_billetera": metodo_pago.proveedor_billetera,
+                "numero_billetera": metodo_pago.numero_billetera,
             },
         )
 
@@ -445,6 +459,8 @@ class MetodoPagoDetailView(generics.RetrieveUpdateDestroyAPIView):
                 "titular": instance.titular,
                 "ultimos_cuatro_digitos": instance.ultimos_cuatro_digitos,
                 "fecha_vencimiento": instance.fecha_vencimiento,
+                "proveedor_billetera": instance.proveedor_billetera,
+                "numero_billetera": instance.numero_billetera,
                 "activo": instance.activo,
             },
         )

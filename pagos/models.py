@@ -1,9 +1,10 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.core.exceptions import ValidationError
 
 from clientes.models import Cliente
 
-from .validators import validar_formato_vencimiento
+from .validators import validar_formato_vencimiento, validar_numero_billetera
 
 User = get_user_model()
 
@@ -12,10 +13,11 @@ class TipoMetodoPago(models.TextChoices):
     """Define los tipos de método de pago admitidos para un cliente."""
     TARJETA_CREDITO = "TARJETA_CREDITO", "Tarjeta de crédito"
     TARJETA_DEBITO = "TARJETA_DEBITO", "Tarjeta de débito"
+    BILLETERA_ELECTRONICA = "BILLETERA_ELECTRONICA", "Billetera electrónica"
 
 
 class MetodoPago(models.Model):
-    """Representa una tarjeta registrada por un cliente para sus operaciones cambiarias.
+    """Representa una tarjeta o billetera electrónica registrada por un cliente para sus operaciones cambiarias.
 
     Por seguridad, nunca se almacena el número completo de la tarjeta ni el
     código de seguridad (CVV): solo se conservan los últimos cuatro dígitos,
@@ -28,13 +30,21 @@ class MetodoPago(models.Model):
         related_name="metodos_pago",
         verbose_name="Cliente",
     )
-    tipo = models.CharField(max_length=20, choices=TipoMetodoPago.choices, verbose_name="Tipo")
+    tipo = models.CharField(max_length=25, choices=TipoMetodoPago.choices, verbose_name="Tipo")
     titular = models.CharField(max_length=150, verbose_name="Titular")
-    ultimos_cuatro_digitos = models.CharField(max_length=4, verbose_name="Últimos 4 dígitos")
+    ultimos_cuatro_digitos = models.CharField(max_length=4, blank=True, verbose_name="Últimos 4 dígitos")
     fecha_vencimiento = models.CharField(
         max_length=5,
+        blank=True,
         verbose_name="Vencimiento",
         validators=[validar_formato_vencimiento],
+    )
+    proveedor_billetera = models.CharField(
+        max_length=100, blank=True, verbose_name="Proveedor de la billetera",
+    )
+    numero_billetera = models.CharField(
+        max_length=20, blank=True, verbose_name="Celular asociado",
+        validators=[validar_numero_billetera],
     )
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(auto_now_add=True, verbose_name="Creado el")
@@ -46,13 +56,50 @@ class MetodoPago(models.Model):
         verbose_name = "Método de pago"
         verbose_name_plural = "Métodos de pago"
 
+    @property
+    def es_billetera(self):
+        """Indica si el método utiliza una billetera electrónica."""
+        return self.tipo == TipoMetodoPago.BILLETERA_ELECTRONICA
+
+    @property
+    def identificacion(self):
+        """Identifica el método en listados y confirmaciones."""
+        if self.es_billetera:
+            return f"{self.proveedor_billetera} · {self.numero_billetera}"
+        return f"•••• {self.ultimos_cuatro_digitos}"
+
+    def clean(self):
+        """Exige los datos propios del tipo de método de pago."""
+        super().clean()
+        errores = {}
+        if self.es_billetera:
+            for campo in ("proveedor_billetera", "numero_billetera"):
+                valor = getattr(self, campo).strip()
+                setattr(self, campo, valor)
+                if not valor:
+                    errores[campo] = "Este campo es obligatorio para una billetera electrónica."
+            if self.numero_billetera:
+                try:
+                    self.numero_billetera = validar_numero_billetera(self.numero_billetera)
+                except ValidationError as error:
+                    errores["numero_billetera"] = error.messages
+            self.ultimos_cuatro_digitos = ""
+            self.fecha_vencimiento = ""
+        else:
+            if not self.fecha_vencimiento:
+                errores["fecha_vencimiento"] = "El vencimiento es obligatorio."
+            self.proveedor_billetera = ""
+            self.numero_billetera = ""
+        if errores:
+            raise ValidationError(errores)
+
     def __str__(self):
         """Devuelve una etiqueta legible del método de pago.
 
         Returns:
-            str: Tipo de tarjeta, últimos 4 dígitos y cliente propietario.
+            str: Tipo, identificación y cliente propietario.
         """
-        return f"{self.get_tipo_display()} •••• {self.ultimos_cuatro_digitos} ({self.cliente})"
+        return f"{self.get_tipo_display()} {self.identificacion} ({self.cliente})"
 
 
 class AccionAuditoriaMetodoPago(models.TextChoices):

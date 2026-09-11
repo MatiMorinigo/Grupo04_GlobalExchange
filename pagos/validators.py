@@ -78,3 +78,11 @@ def _luhn_valido(numero):
                 digito -= 9
         total += digito
     return total % 10 == 0
+
+
+def validar_numero_billetera(valor):
+    """Valida y normaliza el celular asociado; acepta prefijo internacional."""
+    numero = re.sub(r"[ ()-]", "", valor or "")
+    if not re.fullmatch(r"\+?[0-9]{7,15}", numero):
+        raise ValidationError("Ingresá un celular válido, de 7 a 15 dígitos, con prefijo internacional opcional.")
+    return numero

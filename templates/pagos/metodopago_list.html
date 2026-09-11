@@ -35,7 +35,7 @@
             <tr>
                 <th>Tipo</th>
                 <th>Titular</th>
-                <th>Número</th>
+                <th>Número / Billetera</th>
                 <th>Vencimiento</th>
                 <th>Estado</th>
                 <th>Acciones</th>
@@ -46,8 +46,8 @@
             <tr>
                 <td>{{ metodo_pago.get_tipo_display }}</td>
                 <td>{{ metodo_pago.titular }}</td>
-                <td>•••• {{ metodo_pago.ultimos_cuatro_digitos }}</td>
-                <td>{{ metodo_pago.fecha_vencimiento }}</td>
+                <td>{{ metodo_pago.identificacion }}</td>
+                <td>{% if metodo_pago.es_billetera %}No aplica{% else %}{{ metodo_pago.fecha_vencimiento }}{% endif %}</td>
                 <td>
                     {% if metodo_pago.activo %}
                     <span class="badge text-bg-success">Activo</span>

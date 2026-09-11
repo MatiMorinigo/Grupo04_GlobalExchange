@@ -6,9 +6,9 @@ from .models import AuditoriaMetodoPago, MetodoPago
 @admin.register(MetodoPago)
 class MetodoPagoAdmin(admin.ModelAdmin):
     """Configura el listado, el filtro de estado y la búsqueda de métodos de pago."""
-    list_display = ("cliente", "tipo", "ultimos_cuatro_digitos", "titular", "activo")
+    list_display = ("cliente", "tipo", "identificacion", "titular", "activo")
     list_filter = ("tipo", "activo")
-    search_fields = ("cliente__nombre", "cliente__ruc", "titular", "ultimos_cuatro_digitos")
+    search_fields = ("cliente__nombre", "cliente__ruc", "titular", "ultimos_cuatro_digitos", "proveedor_billetera", "numero_billetera")
 
 
 @admin.register(AuditoriaMetodoPago)

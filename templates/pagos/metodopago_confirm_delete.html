@@ -6,7 +6,7 @@
 
     <p class="mt-3">
         ¿Confirmás que querés eliminar definitivamente
-        <strong>{{ metodo_pago.get_tipo_display }} •••• {{ metodo_pago.ultimos_cuatro_digitos }}</strong>
+        <strong>{{ metodo_pago.get_tipo_display }} {{ metodo_pago.identificacion }}</strong>
         a nombre de <strong>{{ metodo_pago.titular }}</strong>?
         Esta acción no se puede deshacer.
     </p>
