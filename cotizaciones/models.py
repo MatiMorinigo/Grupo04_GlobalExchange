@@ -195,3 +195,80 @@ class AuditoriaTasaCambio(models.Model):
             str: Par de monedas y fecha de la modificación registrada.
         """
         return f"{self.tasa_nueva} - {self.fecha_modificacion:%d/%m/%Y %H:%M}"
+
+
+class AccionAuditoriaMoneda(models.TextChoices):
+    """Define las acciones que puede registrar la auditoría de monedas."""
+    CREACION = "CREACION", "Creación"
+    MODIFICACION = "MODIFICACION", "Modificación"
+    DESHABILITACION = "DESHABILITACION", "Deshabilitación"
+    HABILITACION = "HABILITACION", "Habilitación"
+
+
+class AuditoriaMonedaManager(models.Manager):
+    """Crea registros de auditoría para las acciones realizadas sobre monedas."""
+
+    def registrar(self, moneda, accion, realizado_por, datos_anteriores=None, datos_nuevos=None):
+        """Crea un registro de auditoría para una acción sobre una moneda.
+
+        Args:
+            moneda (Moneda): Moneda afectada por la acción.
+            accion (str): Acción realizada, según AccionAuditoriaMoneda.
+            realizado_por (django.contrib.auth.models.User or None): Usuario
+                que realizó la acción, o None si no pudo determinarse.
+            datos_anteriores (dict or None): Datos previos a la acción, si
+                corresponde.
+            datos_nuevos (dict): Datos vigentes de la moneda luego de la acción.
+
+        Returns:
+            AuditoriaMoneda: Registro de auditoría creado.
+        """
+        return self.create(
+            moneda=moneda,
+            accion=accion,
+            realizado_por=realizado_por,
+            datos_anteriores=datos_anteriores,
+            datos_nuevos=datos_nuevos,
+        )
+
+
+class AuditoriaMoneda(models.Model):
+    """Registra la creación, modificación y deshabilitación de monedas para fines de trazabilidad."""
+    moneda = models.ForeignKey(
+        Moneda,
+        on_delete=models.CASCADE,
+        related_name="auditorias",
+        verbose_name="Moneda",
+    )
+    accion = models.CharField(
+        max_length=20,
+        choices=AccionAuditoriaMoneda.choices,
+        verbose_name="Acción",
+    )
+    datos_anteriores = models.JSONField(null=True, blank=True, verbose_name="Datos anteriores")
+    datos_nuevos = models.JSONField(verbose_name="Datos nuevos")
+    realizado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="modificaciones_monedas",
+        verbose_name="Realizado por",
+    )
+    fecha = models.DateTimeField(auto_now_add=True, verbose_name="Fecha")
+
+    objects = AuditoriaMonedaManager()
+
+    class Meta:
+        """Define el orden y los nombres de presentación de la auditoría de monedas."""
+        ordering = ["-fecha"]
+        verbose_name = "Auditoría de moneda"
+        verbose_name_plural = "Auditorías de monedas"
+
+    def __str__(self):
+        """Devuelve una etiqueta legible del registro de auditoría.
+
+        Returns:
+            str: Acción realizada y código de la moneda afectada.
+        """
+        return f"{self.get_accion_display()} - {self.moneda_id}"
