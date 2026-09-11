@@ -31,6 +31,10 @@
             font-size: .8rem;
             font-weight: 700;
         }
+        .user-details {
+            max-width: min(24rem, 45vw);
+            line-height: 1.2;
+        }
     </style>
 
     {% block styles %}{% endblock %}
@@ -77,19 +81,6 @@
 
             <ul class="navbar-nav ms-auto">
 
-                {% if app_environment %}
-
-                <li class="nav-item d-none d-lg-flex align-items-center">
-
-                    <span class="badge text-bg-secondary">
-                        {{ app_environment }}
-                    </span>
-
-                </li>
-
-                {% endif %}
-
-
                 <li class="nav-item">
 
                     <a class="nav-link"
@@ -110,24 +101,27 @@
 
                 {% if request.user.is_authenticated %}
 
-                {% firstof request.user.get_full_name request.user.email request.user.get_username as user_display_name %}
+                {% firstof request.user.email request.user.get_full_name request.user.get_username as user_display_name %}
 
                 <li class="nav-item dropdown user-menu">
 
                     <a href="#"
-                       class="nav-link dropdown-toggle"
+                       class="nav-link dropdown-toggle d-flex align-items-center gap-2 h-auto"
                        data-bs-toggle="dropdown"
                        aria-expanded="false">
 
-                        <span class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center user-initials"
+                        <span class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center flex-shrink-0 user-initials"
                               aria-hidden="true">
 
                             {{ user_display_name|slice:":1"|upper }}
 
                         </span>
 
-                        <span class="d-none d-md-inline">
-                            {{ user_display_name }}
+                        <span class="d-none d-md-flex flex-column text-start user-details">
+                            <span class="text-truncate" title="{{ user_display_name }}">{{ user_display_name }}</span>
+                            <small class="text-body-secondary fw-normal text-truncate" title="{{ rol_usuario|default:'Rol no disponible' }}">
+                                {{ rol_usuario|default:"Rol no disponible" }}
+                            </small>
                         </span>
 
                     </a>
@@ -139,6 +133,9 @@
 
                             <h6 class="dropdown-header">
                                 {{ user_display_name }}
+                                <small class="d-block mt-1 fw-normal text-wrap">
+                                    {{ rol_usuario|default:"Rol no disponible" }}
+                                </small>
                             </h6>
 
                         </li>
@@ -318,22 +315,6 @@
                             <i class="nav-icon bi bi-file-earmark-bar-graph"></i>
 
                             <p>Reportes</p>
-
-                        </span>
-
-                    </li>
-
-
-                    <li class="nav-item">
-
-                        <span class="nav-link disabled text-body-secondary"
-                              aria-disabled="true"
-                              data-bs-toggle="tooltip"
-                              data-bs-title="Módulo aún no disponible">
-
-                            <i class="nav-icon bi bi-person-gear"></i>
-
-                            <p>Usuarios</p>
 
                         </span>
 
