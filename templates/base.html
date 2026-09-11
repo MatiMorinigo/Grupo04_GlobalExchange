@@ -287,6 +287,21 @@
 
                     </li>
 
+                    {% if request.user.is_authenticated %}
+                    <li class="nav-item">
+
+                        <a href="{% url 'metodopago-web-list' %}"
+                           class="nav-link {% if active_menu == 'metodos_pago' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-credit-card"></i>
+
+                            <p>Métodos de pago</p>
+
+                        </a>
+
+                    </li>
+                    {% endif %}
+
                     {% if es_administrador %}
                     <li class="nav-header">
                         GESTIÓN

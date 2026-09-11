@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>{{ page_title }}</h1>
+
+    <form method="post" class="mt-4">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+
+        <div class="mb-3">
+            <label for="{{ form.tipo.id_for_label }}" class="form-label">
+                Tipo
+            </label>
+            {{ form.tipo }}
+
+            {% for error in form.tipo.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.titular.id_for_label }}" class="form-label">
+                Titular
+            </label>
+            {{ form.titular }}
+
+            {% for error in form.titular.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="tarjeta" {% if form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.numero_tarjeta.id_for_label }}" class="form-label">
+                Número de tarjeta
+            </label>
+            {{ form.numero_tarjeta }}
+            {% if form.numero_tarjeta.help_text %}
+                <div class="form-text">{{ form.numero_tarjeta.help_text }}</div>
+            {% endif %}
+
+            {% for error in form.numero_tarjeta.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="tarjeta" {% if form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.fecha_vencimiento.id_for_label }}" class="form-label">
+                Vencimiento
+            </label>
+            {{ form.fecha_vencimiento }}
+
+            {% for error in form.fecha_vencimiento.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="billetera" {% if not form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.proveedor_billetera.id_for_label }}" class="form-label">Proveedor de la billetera</label>
+            {{ form.proveedor_billetera }}
+            {% for error in form.proveedor_billetera.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="billetera" {% if not form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.numero_billetera.id_for_label }}" class="form-label">Celular asociado</label>
+            {{ form.numero_billetera }}
+            <div class="form-text">Ingresá el número de celular registrado en la billetera.</div>
+            {% for error in form.numero_billetera.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            {{ submit_label }}
+        </button>
+
+        <a href="{% url 'metodopago-web-list' %}" class="btn btn-secondary">
+            Cancelar
+        </a>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const tipo = document.getElementById("{{ form.tipo.id_for_label }}");
+        const titular = document.getElementById("{{ form.titular.id_for_label }}");
+        const editando = {{ form.instance.pk|yesno:"true,false" }};
+
+        function actualizarCampos() {
+            const billetera = tipo.value === "BILLETERA_ELECTRONICA";
+            tipo.form.querySelectorAll("[data-campos]").forEach(grupo => {
+                const visible = (grupo.dataset.campos === "billetera") === billetera;
+                grupo.hidden = !visible;
+                grupo.querySelectorAll("input, select").forEach(campo => {
+                    campo.disabled = !visible;
+                    campo.required = visible && !(campo.name === "numero_tarjeta" && editando);
+                });
+            });
+            titular.placeholder = billetera
+                ? "Nombre del titular de la billetera"
+                : "Nombre tal como figura en la tarjeta";
+        }
+
+        tipo.addEventListener("change", actualizarCampos);
+        actualizarCampos();
+    })();
+</script>
+{% endblock %}
