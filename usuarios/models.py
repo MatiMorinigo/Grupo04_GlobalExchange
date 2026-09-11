@@ -88,3 +88,31 @@ class UsuarioCliente(models.Model):
             solicitudes_asociacion__estado=EstadoSolicitud.APROBADA,
         )
 
+
+def obtener_cliente_activo(usuario):
+    """Devuelve el cliente activo vigente de un usuario.
+
+    Args:
+        usuario (django.contrib.auth.models.User): Usuario autenticado del
+            cual se quiere conocer el cliente activo.
+
+    Returns:
+        clientes.models.Cliente or None: El cliente activo del usuario, o
+        None si no está autenticado, no tiene una asociación configurada, o
+        el cliente que tenía seleccionado fue desactivado.
+    """
+    if not usuario.is_authenticated:
+        return None
+
+    perfil = (
+        UsuarioCliente.objects
+        .select_related("cliente_activo")
+        .filter(usuario=usuario)
+        .first()
+    )
+
+    if perfil and perfil.cliente_activo and perfil.cliente_activo.activo:
+        return perfil.cliente_activo
+
+    return None
+
