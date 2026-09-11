@@ -6,6 +6,20 @@ from usuarios.models import EstadoSolicitud, SolicitudAsociacion, UsuarioCliente
 
 
 def home(request):
+    """Renderiza la página inicial con los módulos y clientes del usuario.
+
+    Oculta los módulos administrativos a quienes no tienen ese rol. Para
+    usuarios autenticados con identificador, consulta sus clientes activos
+    con asociación aprobada. Si existen y no hay un cliente activo asignado
+    al perfil, crea el perfil si hace falta y le asigna el primero.
+
+    Args:
+        request (django.http.HttpRequest): Solicitud de la página inicial.
+
+    Returns:
+        django.http.HttpResponse: Página con los módulos visibles, los
+        clientes aprobados y el cliente activo.
+    """
     modules = [
         {
             "title": "Clientes",
@@ -38,12 +52,13 @@ def home(request):
             "description": "Consulta de tasas de cambio.",
             "icon": "bi bi-graph-up-arrow",
             "bg_class": "text-bg-warning",
+            "href": reverse("cotizacion-web-list"),
             "link_class": "link-dark",
-            "status": "No Disponible",
-            "status_class": "text-bg-secondary",
-            "enabled": False,
-            "action_label": "Próximamente",
-            "disabled_reason": "Módulo aún no disponible.",
+            "status": "Disponible",
+            "status_class": "text-bg-success",
+            "enabled": True,
+            "action_label": "Ver Cotizaciones",
+            "disabled_reason": "",
         },
         {
             "title": "Reportes",
@@ -51,19 +66,6 @@ def home(request):
             "icon": "bi bi-file-earmark-bar-graph-fill",
             "bg_class": "text-bg-danger",
             "link_class": "link-light",
-            "status": "No Disponible",
-            "status_class": "text-bg-secondary",
-            "enabled": False,
-            "action_label": "Próximamente",
-            "disabled_reason": "Módulo aún no disponible.",
-            "admin_only": True,
-        },
-        {
-            "title": "Usuarios",
-            "description": "Usuarios, roles y permisos del sistema.",
-            "icon": "bi bi-person-gear",
-            "bg_class": "text-bg-info",
-            "link_class": "link-dark",
             "status": "No Disponible",
             "status_class": "text-bg-secondary",
             "enabled": False,

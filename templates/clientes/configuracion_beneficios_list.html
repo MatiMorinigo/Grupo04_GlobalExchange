@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Configuración de beneficios por categoría</h1>
+
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>Categoría</th>
+                <th>Beneficio (%)</th>
+                <th>Límite mensual (PYG)</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for configuracion in configuraciones %}
+            <tr>
+                <td>{{ configuracion.get_categoria_display }}</td>
+                <td>{{ configuracion.porcentaje_beneficio }}%</td>
+                <td>{{ configuracion.limite_mensual_pyg }}</td>
+                <td>
+                    <a
+                        href="{% url 'configuracion_beneficios_editar' configuracion.pk %}"
+                        class="btn btn-sm btn-primary"
+                    >
+                        Editar
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

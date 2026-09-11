@@ -6,6 +6,8 @@ from .views import (
     ClienteWebDetailView,
     ClienteWebListView,
     ClienteWebUpdateView,
+    ConfiguracionBeneficioCategoriaListView,
+    ConfiguracionBeneficioCategoriaUpdateView,
 )
 
 
@@ -18,5 +20,15 @@ urlpatterns = [
         "<int:id_cliente>/desactivar/",
         ClienteWebDeactivateView.as_view(),
         name="cliente-web-deactivate",
+    ),
+    path(
+    "configuracion-beneficios/",
+    ConfiguracionBeneficioCategoriaListView.as_view(),
+    name="configuracion_beneficios",
+    ),
+    path(
+    "configuracion-beneficios/<int:pk>/editar/",
+    ConfiguracionBeneficioCategoriaUpdateView.as_view(),
+    name="configuracion_beneficios_editar",
     ),
 ]

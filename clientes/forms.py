@@ -1,10 +1,17 @@
 from django import forms
 
-from .models import CategoriaCliente, Cliente, TipoCliente
+from .models import CategoriaCliente, Cliente, TipoCliente, ConfiguracionBeneficioCategoria
 
 
 class ClienteForm(forms.ModelForm):
+    """Permite crear y editar clientes mediante la interfaz web.
+
+    Incluye RUC, nombre, categoría y tipo de persona. Utiliza la validación
+    del modelo y mensajes de error personalizados.
+    """
     class Meta:
+        """Configura los campos y la presentación del formulario de clientes.
+        """
         model = Cliente
         fields = ["ruc", "nombre", "categoria", "tipo"]
         labels = {
@@ -56,3 +63,19 @@ class ClienteForm(forms.ModelForm):
                 "invalid_choice": "El tipo de cliente ingresado no es válido.",
             },
         }
+
+class ConfiguracionBeneficioCategoriaForm(forms.ModelForm):
+    """
+    Permite modificar el porcentaje de beneficio y el límite mensual
+    correspondiente a una categoría de cliente.
+    """
+
+    class Meta:
+        """
+        Define los campos editables de la configuración de beneficios.
+        """
+        model = ConfiguracionBeneficioCategoria
+        fields = [
+            "porcentaje_beneficio",
+            "limite_mensual_pyg",
+        ]
