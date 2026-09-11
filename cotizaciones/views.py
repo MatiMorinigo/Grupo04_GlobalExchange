@@ -1,12 +1,18 @@
+from django.contrib import messages
+from django.db import transaction
 from django.db.models import Max
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse_lazy
+from django.views import View
 from django.views.generic import FormView, ListView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .forms import SimulacionConversionForm
-from .models import Moneda, TasaCambio
+from core.keycloak import tiene_rol
+from core.mixins import AnalistaCambiarioRequiredMixin
+from .forms import SimulacionConversionForm, TasaCambioCrearForm, TasaCambioEditarForm
+from .models import AuditoriaTasaCambio, Moneda, TasaCambio
 from .serializers import MonedaSerializer, SimulacionConversionSerializer, TasaCambioSerializer
 from .services import SimulacionConversionError, simular_conversion
 from clientes.models import CategoriaCliente
@@ -80,6 +86,194 @@ class TasaCambioParVigenteView(generics.RetrieveAPIView):
             moneda_destino_id=self.kwargs["moneda_destino"].upper(),
             vigente=True,
         )
+
+
+class TasaCambioEditarView(AnalistaCambiarioRequiredMixin, View):
+    """Permite a analistas cambiarios y administradores modificar manualmente una tasa vigente.
+
+    El flujo se resuelve en dos pasos dentro de la misma vista: un primer
+    envío solicita los nuevos precios y muestra una comparación antes/después
+    sin guardar nada; un segundo envío, con el campo oculto confirmado,
+    aplica el cambio. La confirmación crea una nueva fila TasaCambio vigente
+    y retira la anterior, preservando el historial y el cálculo de variación
+    ya existentes.
+    """
+    template_name = "cotizaciones/tasa_editar_form.html"
+
+    def get(self, request, id_tasa):
+        """Muestra el formulario de edición con los precios vigentes actuales.
+
+        Args:
+            request (django.http.HttpRequest): Solicitud HTTP recibida.
+            id_tasa (int): Identificador de la tasa vigente que se desea editar.
+
+        Returns:
+            django.http.HttpResponse: Página con el formulario de edición.
+
+        Raises:
+            django.http.Http404: Si no existe una tasa vigente con ese id.
+        """
+        tasa = get_object_or_404(
+            TasaCambio.objects.select_related("moneda_origen", "moneda_destino"),
+            id_tasa=id_tasa,
+            vigente=True,
+        )
+        form = TasaCambioEditarForm(
+            initial={
+                "precio_compra": tasa.precio_compra,
+                "precio_venta": tasa.precio_venta,
+            }
+        )
+        return render(
+            request,
+            self.template_name,
+            {
+                "tasa": tasa,
+                "form": form,
+                "modo_confirmacion": False,
+                "active_menu": "cotizaciones",
+            },
+        )
+
+    def post(self, request, id_tasa):
+        """Solicita confirmación de los nuevos precios o aplica la modificación.
+
+        Sin el campo confirmado, valida los precios ingresados y vuelve a
+        mostrar el formulario en modo confirmación, sin guardar cambios. Con
+        el campo confirmado, crea la nueva tasa vigente, retira la anterior y
+        registra la modificación en el log de auditoría.
+
+        Args:
+            request (django.http.HttpRequest): Solicitud HTTP recibida.
+            id_tasa (int): Identificador de la tasa vigente que se desea editar.
+
+        Returns:
+            django.http.HttpResponse or django.http.HttpResponseRedirect:
+            El formulario con errores o en modo confirmación, o una
+            redirección al listado de cotizaciones tras guardar los cambios.
+
+        Raises:
+            django.http.Http404: Si no existe una tasa vigente con ese id.
+        """
+        tasa = get_object_or_404(
+            TasaCambio.objects.select_related("moneda_origen", "moneda_destino"),
+            id_tasa=id_tasa,
+            vigente=True,
+        )
+        form = TasaCambioEditarForm(request.POST)
+
+        if not form.is_valid():
+            return render(
+                request,
+                self.template_name,
+                {
+                    "tasa": tasa,
+                    "form": form,
+                    "modo_confirmacion": False,
+                    "active_menu": "cotizaciones",
+                },
+            )
+
+        if not form.cleaned_data["confirmado"]:
+            return render(
+                request,
+                self.template_name,
+                {
+                    "tasa": tasa,
+                    "form": form,
+                    "modo_confirmacion": True,
+                    "active_menu": "cotizaciones",
+                },
+            )
+
+        with transaction.atomic():
+            tasa_vigente = get_object_or_404(
+                TasaCambio.objects.select_for_update(),
+                id_tasa=id_tasa,
+                vigente=True,
+            )
+            precio_compra_anterior = tasa_vigente.precio_compra
+            precio_venta_anterior = tasa_vigente.precio_venta
+
+            tasa_vigente.vigente = False
+            tasa_vigente.save(update_fields=["vigente"])
+
+            usuario = request.user if request.user.is_authenticated else None
+            nueva_tasa = TasaCambio.objects.create(
+                moneda_origen=tasa_vigente.moneda_origen,
+                moneda_destino=tasa_vigente.moneda_destino,
+                precio_compra=form.cleaned_data["precio_compra"],
+                precio_venta=form.cleaned_data["precio_venta"],
+                vigente=True,
+                modificado_por=usuario,
+            )
+
+            AuditoriaTasaCambio.objects.create(
+                tasa_nueva=nueva_tasa,
+                tasa_anterior=tasa_vigente,
+                precio_compra_anterior=precio_compra_anterior,
+                precio_venta_anterior=precio_venta_anterior,
+                precio_compra_nuevo=nueva_tasa.precio_compra,
+                precio_venta_nuevo=nueva_tasa.precio_venta,
+                realizado_por=usuario,
+            )
+
+        messages.success(request, "Tasa de cambio modificada correctamente.")
+        return redirect("cotizacion-web-list")
+
+
+class TasaCambioCrearView(AnalistaCambiarioRequiredMixin, FormView):
+    """Permite a analistas cambiarios y administradores crear una tasa de cambio inicial."""
+    form_class = TasaCambioCrearForm
+    template_name = "cotizaciones/tasa_crear_form.html"
+    success_url = reverse_lazy("cotizacion-web-list")
+
+    def get_context_data(self, **kwargs):
+        """Marca el menú de cotizaciones como activo en el formulario de creación.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto del formulario con la selección del menú de cotizaciones.
+        """
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cotizaciones"
+        return context
+
+    def form_valid(self, form):
+        """Crea la tasa de cambio inicial del par de monedas y registra la auditoría.
+
+        Args:
+            form (TasaCambioCrearForm): Formulario validado con el par de
+                monedas y los precios iniciales.
+
+        Returns:
+            django.http.HttpResponseRedirect: Redirección al listado de
+            cotizaciones después de crear la tasa.
+        """
+        usuario = self.request.user if self.request.user.is_authenticated else None
+        nueva_tasa = TasaCambio.objects.create(
+            moneda_origen=form.cleaned_data["moneda_origen"],
+            moneda_destino=form.cleaned_data["moneda_destino"],
+            precio_compra=form.cleaned_data["precio_compra"],
+            precio_venta=form.cleaned_data["precio_venta"],
+            vigente=True,
+            modificado_por=usuario,
+        )
+
+        AuditoriaTasaCambio.objects.create(
+            tasa_nueva=nueva_tasa,
+            tasa_anterior=None,
+            precio_compra_anterior=None,
+            precio_venta_anterior=None,
+            precio_compra_nuevo=nueva_tasa.precio_compra,
+            precio_venta_nuevo=nueva_tasa.precio_venta,
+            realizado_por=usuario,
+        )
+
+        messages.success(self.request, "Tasa de cambio creada correctamente.")
+        return super().form_valid(form)
 
 
 class SimulacionConversionApiView(APIView):
@@ -162,6 +356,10 @@ class CotizacionWebListView(ListView):
                 "total_tasas": tasas.count(),
                 "ultima_actualizacion": ultima_actualizacion,
                 "variaciones_count": len(variaciones),
+                "puede_editar_tasas": (
+                    tiene_rol(self.request, "analista_cambiario")
+                    or tiene_rol(self.request, "administrador")
+                ),
             }
         )
         return context
