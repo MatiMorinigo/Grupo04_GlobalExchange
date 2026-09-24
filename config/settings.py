@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "core",
     "integrations",
     "pagos",
+    "transacciones",
     "usuarios",
 ]
 
