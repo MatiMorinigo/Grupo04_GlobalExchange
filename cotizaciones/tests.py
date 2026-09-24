@@ -4,7 +4,13 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from .models import AuditoriaMoneda, AuditoriaTasaCambio, Moneda, TasaCambio
+from .models import (
+    AuditoriaMoneda,
+    AuditoriaTasaCambio,
+    ConfiguracionComision,
+    Moneda,
+    TasaCambio,
+)
 from django.contrib.auth.models import AnonymousUser, User
 from django.test import RequestFactory
 
@@ -1071,3 +1077,89 @@ class MonedaWebViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ya existe una moneda registrada con este código.")
+
+
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC)
+class ConfiguracionComisionTests(TestCase):
+    """Prueba la configuración de comisiones del sistema y su acceso restringido."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="configurador", password="testpass123")
+        self.client.force_login(self.user)
+
+    def test_obtener_devuelve_siempre_la_misma_fila(self):
+        primera = ConfiguracionComision.obtener()
+        primera.porcentaje_compra = Decimal("1.50")
+        primera.save()
+
+        segunda = ConfiguracionComision.obtener()
+
+        self.assertEqual(ConfiguracionComision.objects.count(), 1)
+        self.assertEqual(segunda.pk, primera.pk)
+        self.assertEqual(segunda.porcentaje_compra, Decimal("1.50"))
+
+    def test_guardar_una_instancia_nueva_no_crea_una_segunda_fila(self):
+        ConfiguracionComision.obtener()
+
+        ConfiguracionComision(
+            porcentaje_compra=Decimal("3.00"),
+            porcentaje_venta=Decimal("4.00"),
+        ).save()
+
+        self.assertEqual(ConfiguracionComision.objects.count(), 1)
+        self.assertEqual(
+            ConfiguracionComision.obtener().porcentaje_compra, Decimal("3.00")
+        )
+
+    def test_administrador_puede_actualizar_las_comisiones(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            response = self.client.post(
+                reverse("configuracion-comisiones-editar"),
+                {"porcentaje_compra": "1.00", "porcentaje_venta": "2.00"},
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertRedirects(
+            response,
+            reverse("configuracion_beneficios"),
+            fetch_redirect_response=False,
+        )
+        configuracion = ConfiguracionComision.obtener()
+        self.assertEqual(configuracion.porcentaje_compra, Decimal("1.00"))
+        self.assertEqual(configuracion.porcentaje_venta, Decimal("2.00"))
+        self.assertEqual(configuracion.modificado_por, self.user)
+
+    def test_rechaza_comision_superior_a_cien(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            response = self.client.post(
+                reverse("configuracion-comisiones-editar"),
+                {"porcentaje_compra": "150.00", "porcentaje_venta": "0.00"},
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ConfiguracionComision.obtener().porcentaje_compra, Decimal("0.00"))
+
+    def test_usuario_sin_rol_administrador_no_puede_editar(self):
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=False):
+            response = self.client.get(
+                reverse("configuracion-comisiones-editar"), HTTP_HOST="127.0.0.1"
+            )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_seccion_de_configuracion_muestra_las_comisiones(self):
+        configuracion = ConfiguracionComision.obtener()
+        configuracion.porcentaje_compra = Decimal("1.25")
+        configuracion.save()
+
+        with patch("core.mixins.AdminRequiredMixin.test_func", return_value=True):
+            response = self.client.get(
+                reverse("configuracion_beneficios"), HTTP_HOST="127.0.0.1"
+            )
+
+        self.assertContains(response, "Comisiones")
+        self.assertEqual(
+            response.context["configuracion_comision"].porcentaje_compra,
+            Decimal("1.25"),
+        )

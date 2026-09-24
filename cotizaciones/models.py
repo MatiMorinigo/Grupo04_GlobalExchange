@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
@@ -272,3 +275,79 @@ class AuditoriaMoneda(models.Model):
             str: Acción realizada y código de la moneda afectada.
         """
         return f"{self.get_accion_display()} - {self.moneda_id}"
+
+
+class ConfiguracionComision(models.Model):
+    """Almacena los porcentajes de comisión que la casa de cambios aplica a sus operaciones.
+
+    Existe una única fila en la tabla: la configuración es global al sistema y
+    el administrador la edita desde la sección Configuración. Toda lectura
+    debe realizarse mediante :meth:`obtener`, que crea la fila con valores en
+    cero si todavía no existe.
+
+    Los porcentajes se registran como copia en cada transacción, de modo que
+    un cambio posterior en esta configuración no altera las operaciones ya
+    generadas.
+    """
+    porcentaje_compra = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MaxValueValidator(Decimal("100.00")),
+        ],
+        verbose_name="Comisión de compra (%)",
+    )
+    porcentaje_venta = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MaxValueValidator(Decimal("100.00")),
+        ],
+        verbose_name="Comisión de venta (%)",
+    )
+    actualizado_en = models.DateTimeField(auto_now=True, verbose_name="Última modificación")
+    modificado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="comisiones_configuradas",
+        verbose_name="Modificado por",
+    )
+
+    class Meta:
+        """Define los nombres de presentación de la configuración de comisiones."""
+        verbose_name = "Configuración de comisiones"
+        verbose_name_plural = "Configuración de comisiones"
+
+    @classmethod
+    def obtener(cls):
+        """Devuelve la configuración vigente, creándola en cero si no existe.
+
+        Returns:
+            ConfiguracionComision: Única instancia de configuración del sistema.
+        """
+        configuracion, _ = cls.objects.get_or_create(pk=1)
+        return configuracion
+
+    def save(self, *args, **kwargs):
+        """Guarda la configuración forzando siempre la misma clave primaria.
+
+        Args:
+            *args: Argumentos posicionales del método save original.
+            **kwargs: Opciones del método save original.
+        """
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        """Devuelve una etiqueta legible de los porcentajes configurados.
+
+        Returns:
+            str: Comisión de compra y de venta vigentes.
+        """
+        return f"Compra {self.porcentaje_compra}% - Venta {self.porcentaje_venta}%"

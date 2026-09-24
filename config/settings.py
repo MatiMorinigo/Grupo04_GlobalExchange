@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "clientes",
     "cotizaciones",
     "core",
+    "destinos",
     "integrations",
     "pagos",
     "transacciones",

@@ -11,5 +11,7 @@ generada automáticamente con Sphinx a partir de los docstrings del proyecto.
    clientes
    core
    cotizaciones
+   destinos
    pagos
+   transacciones
    config

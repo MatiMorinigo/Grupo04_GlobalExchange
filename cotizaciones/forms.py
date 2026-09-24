@@ -3,7 +3,7 @@ from decimal import Decimal
 from django import forms
 from django.core.validators import MinValueValidator
 
-from .models import Moneda, TasaCambio
+from .models import ConfiguracionComision, Moneda, TasaCambio
 
 
 class TasaCambioEditarForm(forms.Form):
@@ -282,3 +282,46 @@ class SimulacionConversionForm(forms.Form):
             raise forms.ValidationError("La moneda de origen y destino deben ser distintas.")
 
         return cleaned_data
+
+
+class ConfiguracionComisionForm(forms.ModelForm):
+    """Permite al administrador modificar las comisiones de compra y de venta del sistema."""
+
+    class Meta:
+        """Define los campos editables de la configuración de comisiones."""
+        model = ConfiguracionComision
+        fields = ["porcentaje_compra", "porcentaje_venta"]
+        labels = {
+            "porcentaje_compra": "Comisión de compra (%)",
+            "porcentaje_venta": "Comisión de venta (%)",
+        }
+        widgets = {
+            "porcentaje_compra": forms.NumberInput(
+                attrs={
+                    "class": "form-control",
+                    "step": "0.01",
+                    "min": "0",
+                    "max": "100",
+                    "autocomplete": "off",
+                }
+            ),
+            "porcentaje_venta": forms.NumberInput(
+                attrs={
+                    "class": "form-control",
+                    "step": "0.01",
+                    "min": "0",
+                    "max": "100",
+                    "autocomplete": "off",
+                }
+            ),
+        }
+        error_messages = {
+            "porcentaje_compra": {
+                "required": "La comisión de compra es obligatoria.",
+                "invalid": "Ingresá un porcentaje de comisión válido.",
+            },
+            "porcentaje_venta": {
+                "required": "La comisión de venta es obligatoria.",
+                "invalid": "Ingresá un porcentaje de comisión válido.",
+            },
+        }

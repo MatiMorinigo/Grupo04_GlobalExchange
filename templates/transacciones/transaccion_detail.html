@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Operación {{ transaccion.id_transaccion }} | Global Exchange{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h1>Operación {{ transaccion.id_transaccion }}</h1>
+        {% if transaccion.estado == "PENDIENTE" %}
+        <span class="badge text-bg-warning">Pendiente</span>
+        {% elif transaccion.estado == "COMPLETADA" %}
+        <span class="badge text-bg-success">Completada</span>
+        {% elif transaccion.estado == "CANCELADA" %}
+        <span class="badge text-bg-secondary">Cancelada</span>
+        {% else %}
+        <span class="badge text-bg-danger">Anulada</span>
+        {% endif %}
+    </div>
+
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Condiciones de la operación</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered mb-0">
+                    <tbody>
+                        <tr>
+                            <th style="width: 40%">Tipo de operación</th>
+                            <td>{{ transaccion.get_tipo_operacion_display }}</td>
+                        </tr>
+                        <tr>
+                            <th>Monto a recibir</th>
+                            <td>{{ transaccion.monto_divisa }} {{ transaccion.moneda.codigo }}</td>
+                        </tr>
+                        <tr>
+                            <th>Cotización aplicada</th>
+                            <td>
+                                {{ transaccion.tasa_aplicada }} PYG por
+                                {{ transaccion.moneda.codigo }}
+                                <div class="form-text">
+                                    Vigente desde {{ transaccion.fecha_vigencia_tasa }}
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Destino de acreditación</th>
+                            <td>
+                                {% if transaccion.destino_acreditacion %}
+                                    {{ transaccion.destino_acreditacion.etiqueta }}
+                                    ({{ transaccion.destino_acreditacion.moneda_id }})
+                                {% else %}
+                                    Sin definir
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Creada el</th>
+                            <td>{{ transaccion.creada_en }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Desglose en guaraníes</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered mb-0">
+                    <tbody>
+                        <tr>
+                            <th style="width: 40%">Subtotal</th>
+                            <td>{{ transaccion.subtotal_pyg }} PYG</td>
+                        </tr>
+                        <tr>
+                            <th>
+                                Beneficio {{ transaccion.get_categoria_aplicada_display }}
+                                ({{ transaccion.beneficio_porcentaje }}%)
+                            </th>
+                            <td>
+                                − {{ transaccion.beneficio_monto_pyg }} PYG
+                                {% if transaccion.beneficio_monto_pyg > 0 %}
+                                <div class="form-text">
+                                    Aplicado sobre {{ transaccion.monto_beneficiado_pyg }} PYG,
+                                    con un límite de {{ transaccion.limite_beneficio_pyg }} PYG.
+                                </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Comisión de compra ({{ transaccion.comision_porcentaje }}%)</th>
+                            <td>+ {{ transaccion.comision_monto_pyg }} PYG</td>
+                        </tr>
+                        <tr class="table-active">
+                            <th>Total a pagar</th>
+                            <td><strong>{{ transaccion.total_pyg }} PYG</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if transaccion.estado == "CANCELADA" %}
+    <div class="alert alert-secondary mt-4">
+        <strong>Operación cancelada el {{ transaccion.cancelada_en }}.</strong>
+        <div>{{ transaccion.get_etapa_cancelacion_display }}.</div>
+        {% if transaccion.motivo_cancelacion %}
+        <div class="mt-2">Motivo: {{ transaccion.motivo_cancelacion }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="mt-4 d-flex flex-wrap gap-2">
+        {% if transaccion.estado == "PENDIENTE" %}
+        <form method="post" action="{% url 'transaccion-web-revalidar' transaccion.id_transaccion %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">
+                Continuar al pago
+            </button>
+        </form>
+        <a
+            href="{% url 'transaccion-web-cancelar' transaccion.id_transaccion %}"
+            class="btn btn-outline-danger"
+        >
+            Cancelar operación
+        </a>
+        {% endif %}
+        <a href="{% url 'compra-web-create' %}" class="btn btn-secondary">
+            Nueva operación
+        </a>
+    </div>
+</div>
+{% endblock %}
