@@ -18,6 +18,8 @@
         </div>
     </div>
 
+    {% include "transacciones/_cliente_operando.html" with cliente=transaccion.cliente etiqueta="Cliente de la operación" %}
+
     <div class="card card-primary card-outline mt-4">
         <div class="card-header">
             <h2 class="card-title h5 mb-0">Condiciones de la operación</h2>

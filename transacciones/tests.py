@@ -657,3 +657,96 @@ class CompraDivisaWebTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_formulario_muestra_el_cliente_con_el_que_se_opera(self):
+        response = self.client.get(reverse("compra-web-create"), HTTP_HOST="127.0.0.1")
+
+        self.assertContains(response, "Operando con el cliente")
+        self.assertContains(response, "Cliente Comprador")
+        self.assertContains(response, "80000201-1")
+        self.assertNotContains(response, "Cliente Ajeno")
+
+    def test_formulario_orienta_sobre_como_cambiar_de_cliente(self):
+        response = self.client.get(reverse("compra-web-create"), HTTP_HOST="127.0.0.1")
+
+        self.assertContains(response, "¿Querés operar con otro cliente?")
+        self.assertContains(response, f'<a href="{reverse("home")}">menú principal</a>')
+
+    def test_formulario_con_errores_sigue_mostrando_el_cliente(self):
+        datos = self._datos()
+        datos.pop("monto_divisa")
+
+        response = self.client.post(
+            reverse("compra-web-create"), datos, HTTP_HOST="127.0.0.1"
+        )
+
+        self.assertFalse(response.context["modo_confirmacion"])
+        self.assertContains(response, "Operando con el cliente")
+        self.assertContains(response, "Cliente Comprador")
+
+    def test_resumen_muestra_el_cliente_y_la_orientacion(self):
+        response = self.client.post(
+            reverse("compra-web-create"), self._datos(), HTTP_HOST="127.0.0.1"
+        )
+
+        self.assertTrue(response.context["modo_confirmacion"])
+        self.assertContains(response, "Operando con el cliente")
+        self.assertContains(response, "Cliente Comprador")
+        self.assertContains(response, "80000201-1")
+        self.assertContains(response, "¿Querés operar con otro cliente?")
+
+    def test_resumen_con_advertencia_de_cotizacion_conserva_el_cliente(self):
+        self._publicar_nueva_tasa("7400.0000")
+
+        response = self.client.post(
+            reverse("compra-web-create"),
+            self._datos(confirmado="True", id_tasa_vista=self.tasa_usd.id_tasa),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertTrue(response.context["advertencia_cotizacion"])
+        self.assertContains(response, "Cliente Comprador")
+
+    def test_cada_usuario_ve_el_cliente_que_tiene_activo(self):
+        self.perfil.cliente_activo = self.otro_cliente
+        self.perfil.save(update_fields=["cliente_activo"])
+
+        response = self.client.get(reverse("compra-web-create"), HTTP_HOST="127.0.0.1")
+
+        self.assertContains(response, "Cliente Ajeno")
+        self.assertContains(response, "80000202-2")
+        self.assertNotContains(response, "Cliente Comprador")
+
+    def test_compra_registrada_muestra_el_cliente_de_la_operacion_sin_orientacion(self):
+        transaccion = crear_transaccion_compra(
+            self.cliente,
+            self.user,
+            "USD",
+            Decimal("100.00"),
+            metodo_pago=self.metodo_pago,
+        )
+
+        response = self.client.get(
+            reverse("transaccion-web-detail", args=[transaccion.id_transaccion]),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertContains(response, "Cliente de la operación")
+        self.assertContains(response, "Cliente Comprador")
+        self.assertNotContains(response, "Operando con el cliente")
+        self.assertNotContains(response, "¿Querés operar con otro cliente?")
+
+    def test_cambiar_de_cliente_a_mitad_del_flujo_no_registra_la_compra(self):
+        # El método de pago elegido en el resumen pertenece al cliente original.
+        self.perfil.cliente_activo = self.otro_cliente
+        self.perfil.save(update_fields=["cliente_activo"])
+
+        response = self.client.post(
+            reverse("compra-web-create"),
+            self._datos(confirmado="True", id_tasa_vista=self.tasa_usd.id_tasa),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("metodo_pago", response.context["form"].errors)
+        self.assertEqual(Transaccion.objects.count(), 0)

@@ -5,9 +5,11 @@
 {% block content %}
 <div class="container mt-4">
 
-{% if modo_confirmacion %}
+<h1>{% if modo_confirmacion %}Resumen de la compra{% else %}{{ page_title }}{% endif %}</h1>
 
-    <h1>Resumen de la compra</h1>
+{% include "transacciones/_cliente_operando.html" with cliente=cliente_operando con_ayuda=True %}
+
+{% if modo_confirmacion %}
 
     {% if advertencia_cotizacion %}
     <div class="alert alert-warning mt-3">
@@ -16,7 +18,7 @@
         los importes se recalcularon. Revisalos antes de confirmar.
     </div>
     {% else %}
-    <p class="text-body-secondary">
+    <p class="text-body-secondary mt-3">
         Revisá los datos antes de confirmar. La operación todavía no fue registrada.
     </p>
     {% endif %}
@@ -125,9 +127,7 @@
 
 {% else %}
 
-    <h1>{{ page_title }}</h1>
-
-    <p class="text-body-secondary">
+    <p class="text-body-secondary mt-3">
         Entregás guaraníes y recibís la moneda extranjera que elijas, aplicando la
         cotización vigente, el beneficio de tu categoría y la comisión de compra.
     </p>

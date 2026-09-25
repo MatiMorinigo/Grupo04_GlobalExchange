@@ -1,0 +1,40 @@
+{# Recuadro con el cliente de la operación. Parámetros: cliente, etiqueta (opcional), con_ayuda (opcional). #}
+{% if cliente %}
+<div class="card border-0 shadow-sm mt-3"
+     style="border-left: 4px solid var(--bs-success) !important;">
+    <div class="card-body py-3">
+
+        <div class="d-flex align-items-center gap-3">
+
+            <div class="rounded-circle bg-success-subtle text-success d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                 style="width:3rem;height:3rem;">
+                <i class="bi bi-building-check fs-5" aria-hidden="true"></i>
+            </div>
+
+            <div>
+                <div class="small text-secondary mb-1">
+                    {{ etiqueta|default:"Operando con el cliente" }}
+                </div>
+
+                <h5 class="mb-0 fw-bold">
+                    {{ cliente.nombre }}
+                </h5>
+
+                <div class="small text-secondary">
+                    RUC: {{ cliente.ruc }}
+                    &middot; {{ cliente.get_categoria_display }}
+                    &middot; {{ cliente.get_tipo_display }}
+                </div>
+            </div>
+        </div>
+
+        {% if con_ayuda %}
+        <div class="small text-secondary mt-3">
+            ¿Querés operar con otro cliente? Cambiá tu cliente activo desde el
+            selector del <a href="{% url 'home' %}">menú principal</a>.
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endif %}

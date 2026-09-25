@@ -54,12 +54,20 @@ Trabajo realizado:
 
 - **Se agregó la clave foránea `metodo_pago` a `Transaccion`**, obligatoria en el formulario pero `null=True` en la base para no invalidar filas previas. Registra con qué medio se abonará la operación; la integración real del pago (SIPAP) corresponde a una historia posterior.
 
+- **Se indica con qué cliente opera el usuario en las tres pantallas del flujo.** Un usuario puede estar asociado a varios clientes y elige uno activo desde el menú principal, pero la compra se registra siempre a nombre de ese cliente sin que ninguna pantalla lo dijera, con el riesgo de comprar para el cliente equivocado. Se creó el fragmento `templates/transacciones/_cliente_operando.html`, que reproduce el aspecto de la tarjeta «Cliente activo» del menú principal (nombre, RUC, categoría y tipo) para que el usuario reconozca el mismo elemento. Aparece en la carga de datos, en el resumen de confirmación (también cuando este muestra la advertencia por cambio de cotización) y en la compra registrada.
+
+- **En la compra registrada se muestra el cliente de la transacción, no el cliente activo del momento.** Es el cliente a cuyo nombre quedó la operación, y puede diferir del activo si el usuario cambió de cliente después de comprar.
+
+- **El recuadro orienta pero no permite cambiar de cliente.** En la carga de datos y en el resumen incluye el mensaje «¿Querés operar con otro cliente? Cambiá tu cliente activo desde el selector del menú principal», con un enlace al menú principal, que es donde vive el selector. No se incorporó un selector propio en estas pantallas: sería confuso para quien tiene un único cliente aprobado. En la compra registrada el mensaje se omite, porque la operación ya quedó hecha.
+
+- **No fue necesario un resguardo adicional contra el cambio de cliente a mitad del flujo.** El método de pago es obligatorio y su lista se acota al cliente activo, de modo que si el usuario cambia de cliente entre el resumen y la confirmación el formulario resulta inválido y no se registra la compra. Un test fija ese comportamiento.
+
 - **Protección contra IDOR en todas las vistas nuevas**, siguiendo lo establecido en SCRUM-55: toda consulta filtra por `cliente=obtener_cliente_activo(request.user)`, de modo que un usuario autenticado no puede ver la operación ni el comprobante de otro cliente, ni usar un destino de acreditación o un método de pago ajeno.
 
 ## Validaciones realizadas
 
-- `python manage.py test` completo en verde: **180 tests**, sin fallos ni errores, sobre PostgreSQL.
-- Por aplicación: `destinos` 19 tests, `transacciones` 38 tests (los 12 de modelo preexistentes más 26 nuevos), `cotizaciones` 57 tests.
+- `python manage.py test` completo en verde: **188 tests**, sin fallos ni errores, sobre PostgreSQL.
+- Por aplicación: `destinos` 19 tests, `transacciones` 46 tests (los 12 de modelo preexistentes más 34 nuevos), `cotizaciones` 57 tests.
 - Entre los tests del flujo se verifica explícitamente que el primer envío **no persiste nada** (`Transaccion.objects.count() == 0`), que la advertencia por cambio de cotización tampoco persiste, y que el método de pago y el destino de otro cliente son rechazados por el formulario.
 - Los doce tests de modelo que ya existían en `transacciones/tests.py` pasan sin modificaciones, lo que confirma que la fórmula implementada coincide con la que el equipo había fijado.
 - `python manage.py makemigrations --check --dry-run` sin cambios pendientes.

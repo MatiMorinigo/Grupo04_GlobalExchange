@@ -58,6 +58,7 @@ class CompraDivisaWebCreateView(ClienteActivoRequiredMixin, FormView):
             {
                 "active_menu": "transacciones",
                 "page_title": "Comprar divisas",
+                "cliente_operando": obtener_cliente_activo(self.request.user),
             }
         )
         return context
@@ -193,7 +194,9 @@ class TransaccionWebDetailView(ClienteActivoRequiredMixin, DetailView):
         """
         return Transaccion.objects.filter(
             cliente=obtener_cliente_activo(self.request.user)
-        ).select_related("moneda", "tasa_cambio", "destino_acreditacion", "metodo_pago")
+        ).select_related(
+            "cliente", "moneda", "tasa_cambio", "destino_acreditacion", "metodo_pago"
+        )
 
     def get_context_data(self, **kwargs):
         """Marca el menú de operaciones como activo.
