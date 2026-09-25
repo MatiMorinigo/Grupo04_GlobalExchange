@@ -15,8 +15,8 @@ Se utilizó IA para implementar la HU-11 (compra de divisas) sobre el modelo `Tr
 Trabajo realizado:
 
 - Modelo `ConfiguracionComision` en `cotizaciones/models.py`, de fila única, con los porcentajes de compra y venta, editable desde la sección **Configuración** del menú lateral.
-- Servicio `transacciones/services.py` con el cálculo completo de la operación (`calcular_compra`), el alta de la transacción pendiente, la verificación de vigencia de la cotización, el recálculo con la nueva tasa y la cancelación previa al pago.
-- Vistas web del flujo de compra: alta de la operación, detalle con el desglose, revalidación de cotización, aceptación de la nueva tasa y cancelación, todas restringidas al cliente activo.
+- Servicio `transacciones/services.py` con la búsqueda de la cotización vigente, el cálculo completo de la operación (`calcular_compra`) y el alta de la transacción pendiente.
+- Flujo web de compra en dos pasos sobre una única vista: carga de los datos (moneda, monto, destino de acreditación y método de pago), resumen con el desglose y confirmación, seguido del comprobante imprimible. Todas las vistas restringidas al cliente activo.
 - Aplicación nueva `destinos` con el modelo `DestinoAcreditacion` (cuenta bancaria o billetera electrónica), su CRUD web completo y su auditoría, siguiendo el patrón ya validado en `pagos`.
 - Se habilitó el ítem "Operaciones de cambio" del menú lateral y de la página principal, que hasta ahora figuraba como módulo no disponible.
 
@@ -40,18 +40,27 @@ Trabajo realizado:
 
 - **El alcance llega hasta el paso previo al pago.** La historia termina en "podrá continuar con el proceso de pago", de modo que la confirmación del pago y el paso a estado `COMPLETADA` quedan como punto de entrada de la historia siguiente. `porcentaje_venta` queda creado y configurable, pero todavía sin flujo que lo consuma.
 
-- **No se incluyó la pantalla de consulta del historial de transacciones**, que corresponde a otra historia a cargo de otro integrante del equipo. Solo se implementó el detalle de una operación puntual, porque el flujo de esta historia lo necesita para revalidar la cotización, aceptar la nueva tasa o cancelar la operación. La ruta `/transacciones/` no expone un listado: el módulo entra por `/transacciones/compra/`.
+- **No se incluyó la pantalla de consulta del historial de transacciones**, que corresponde a otra historia a cargo de otro integrante del equipo. Solo se implementaron el resumen de la operación recién registrada y su comprobante, porque el flujo de esta historia termina ahí. La ruta `/transacciones/` no expone un listado: el módulo entra por `/transacciones/compra/`.
 
-- **La cancelación usa `CANCELADA` y nunca `ANULADA`**, con `etapa_cancelacion = PREVIA_PAGO`, y conserva los importes que la operación tenía en ese momento, según exige el criterio de aceptación.
+- **La transacción se persiste recién al confirmar.** El resumen que ve el cliente es una previsualización que no toca la base de datos: se calcula con `calcular_compra()` y se muestra sin guardar nada. Solo al pulsar "Confirmar compra" se crea la fila en estado `PENDIENTE`. Esto evita acumular transacciones abandonadas por clientes que se arrepienten al ver el total.
 
-- **Al aceptar una nueva cotización se recalcula la misma fila.** `recalcular_con_nueva_tasa()` reemplaza los valores sobre la transacción existente sin crear una segunda ni guardar un histórico de la cotización anterior. La pantalla de recotización muestra los importes nuevos sin persistirlos, para que el cliente decida antes de que se modifique nada.
+- **El paso de confirmación se resuelve sin estado de sesión**, siguiendo la decisión que el equipo ya había tomado en `docs/CHIA-SCRUM-57.md` y el patrón de `TasaCambioEditarView`: un campo oculto `confirmado` distingue el envío que pide el resumen del que registra la operación, y el resumen reenvía los datos por campos ocultos. Una sola vista y una sola URL.
 
-- **Protección contra IDOR en todas las vistas nuevas**, siguiendo lo establecido en SCRUM-55: toda consulta filtra por `cliente=obtener_cliente_activo(request.user)`, de modo que un usuario autenticado no puede ver, recalcular ni cancelar la operación de otro cliente, ni usar un destino de acreditación ajeno.
+- **El cambio de cotización se detecta con un campo oculto `id_tasa_vista`**, que viaja en el resumen con el identificador de la cotización usada para calcularlo. Al confirmar, la vista compara ese valor con la tasa vigente en ese instante; si difieren, recalcula, muestra la advertencia con los importes nuevos y no persiste nada. Aceptar la nueva cotización es, simplemente, volver a confirmar.
+
+- **La cancelación de una transacción ya `PENDIENTE` quedó fuera de esta historia.** Como la operación no existe hasta que se confirma, el botón "Cancelar compra" del resumen solo descarta el formulario. Cancelar una operación pendiente se hará desde el historial de transacciones, en otra historia a cargo de otro integrante, junto con el pago. Por eso se retiraron del servicio `recalcular_con_nueva_tasa()` y `cancelar_transaccion()`, que habrían quedado sin consumidor.
+
+- **El comprobante es HTML imprimible, no un PDF generado en el servidor.** El proyecto no tiene ninguna librería de PDF y agregar una (ReportLab o WeasyPrint) obligaría a todo el equipo a reinstalar dependencias, con el agravante de que WeasyPrint requiere GTK en Windows. La plantilla `templates/transacciones/comprobante.html` usa un bloque `@media print` que oculta el menú lateral, la cabecera y los botones, y un botón que llama a `window.print()`; desde ahí el navegador permite guardar como PDF.
+
+- **Se agregó la clave foránea `metodo_pago` a `Transaccion`**, obligatoria en el formulario pero `null=True` en la base para no invalidar filas previas. Registra con qué medio se abonará la operación; la integración real del pago (SIPAP) corresponde a una historia posterior.
+
+- **Protección contra IDOR en todas las vistas nuevas**, siguiendo lo establecido en SCRUM-55: toda consulta filtra por `cliente=obtener_cliente_activo(request.user)`, de modo que un usuario autenticado no puede ver la operación ni el comprobante de otro cliente, ni usar un destino de acreditación o un método de pago ajeno.
 
 ## Validaciones realizadas
 
-- `python manage.py test` completo en verde: **177 tests**, sin fallos ni errores, sobre PostgreSQL.
-- Por aplicación: `destinos` 19 tests, `transacciones` 35 tests (los 12 de modelo preexistentes más 23 nuevos), `cotizaciones` 57 tests.
+- `python manage.py test` completo en verde: **180 tests**, sin fallos ni errores, sobre PostgreSQL.
+- Por aplicación: `destinos` 19 tests, `transacciones` 38 tests (los 12 de modelo preexistentes más 26 nuevos), `cotizaciones` 57 tests.
+- Entre los tests del flujo se verifica explícitamente que el primer envío **no persiste nada** (`Transaccion.objects.count() == 0`), que la advertencia por cambio de cotización tampoco persiste, y que el método de pago y el destino de otro cliente son rechazados por el formulario.
 - Los doce tests de modelo que ya existían en `transacciones/tests.py` pasan sin modificaciones, lo que confirma que la fórmula implementada coincide con la que el equipo había fijado.
 - `python manage.py makemigrations --check --dry-run` sin cambios pendientes.
 - `python manage.py check` sin incidencias.

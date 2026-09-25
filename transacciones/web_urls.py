@@ -2,9 +2,7 @@ from django.urls import path
 
 from .views import (
     CompraDivisaWebCreateView,
-    TransaccionAceptarNuevaTasaView,
-    TransaccionCancelarView,
-    TransaccionRevalidarCotizacionView,
+    TransaccionComprobanteView,
     TransaccionWebDetailView,
 )
 
@@ -17,18 +15,8 @@ urlpatterns = [
         name="transaccion-web-detail",
     ),
     path(
-        "<int:id_transaccion>/revalidar/",
-        TransaccionRevalidarCotizacionView.as_view(),
-        name="transaccion-web-revalidar",
-    ),
-    path(
-        "<int:id_transaccion>/aceptar-tasa/",
-        TransaccionAceptarNuevaTasaView.as_view(),
-        name="transaccion-web-aceptar-tasa",
-    ),
-    path(
-        "<int:id_transaccion>/cancelar/",
-        TransaccionCancelarView.as_view(),
-        name="transaccion-web-cancelar",
+        "<int:id_transaccion>/comprobante/",
+        TransaccionComprobanteView.as_view(),
+        name="transaccion-web-comprobante",
     ),
 ]

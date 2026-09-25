@@ -19,6 +19,7 @@ from destinos.models import (
     TipoCuentaBancaria,
     TipoDestinoAcreditacion,
 )
+from pagos.models import MetodoPago, TipoMetodoPago
 from usuarios.models import UsuarioCliente
 
 from .models import (
@@ -30,7 +31,6 @@ from .models import (
 from .services import (
     OperacionCambiariaError,
     calcular_compra,
-    cancelar_transaccion,
     crear_transaccion_compra,
 )
 
@@ -383,6 +383,8 @@ class CompraDivisaWebTests(TestCase):
         _configurar_beneficio(CategoriaCliente.VIP, "5.00", "50000000.00")
         _configurar_comision("1.00")
 
+        self.metodo_pago = self._crear_metodo_pago()
+
     def _crear_destino(self, cliente=None, moneda=None, **cambios):
         datos = {
             "cliente": cliente or self.cliente,
@@ -409,6 +411,27 @@ class CompraDivisaWebTests(TestCase):
             vigente=True,
         )
 
+    def _crear_metodo_pago(self, cliente=None, **cambios):
+        datos = {
+            "cliente": cliente or self.cliente,
+            "tipo": TipoMetodoPago.TARJETA_CREDITO,
+            "titular": "Juan Perez",
+            "ultimos_cuatro_digitos": "1486",
+            "fecha_vencimiento": "12/30",
+            "activo": True,
+        }
+        datos.update(cambios)
+        return MetodoPago.objects.create(**datos)
+
+    def _datos(self, **cambios):
+        datos = {
+            "moneda": "USD",
+            "monto_divisa": "100.00",
+            "metodo_pago": self.metodo_pago.id_metodo_pago,
+        }
+        datos.update(cambios)
+        return datos
+
     def test_sin_cliente_activo_redirige_a_home(self):
         self.perfil.cliente_activo = None
         self.perfil.save(update_fields=["cliente_activo"])
@@ -417,10 +440,31 @@ class CompraDivisaWebTests(TestCase):
 
         self.assertRedirects(response, reverse("home"))
 
-    def test_compra_crea_la_transaccion_en_estado_pendiente(self):
+    def test_primer_envio_muestra_el_resumen_sin_persistir(self):
+        response = self.client.post(
+            reverse("compra-web-create"), self._datos(), HTTP_HOST="127.0.0.1"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["modo_confirmacion"])
+        self.assertFalse(response.context["advertencia_cotizacion"])
+        self.assertEqual(Transaccion.objects.count(), 0)
+
+    def test_resumen_expone_el_desglose_calculado(self):
+        response = self.client.post(
+            reverse("compra-web-create"), self._datos(), HTTP_HOST="127.0.0.1"
+        )
+
+        resumen = response.context["resumen"]
+        self.assertEqual(resumen["subtotal_pyg"], Decimal("735000.00"))
+        self.assertEqual(resumen["beneficio_monto_pyg"], Decimal("36750.00"))
+        self.assertEqual(resumen["comision_monto_pyg"], Decimal("7350.00"))
+        self.assertEqual(resumen["total_pyg"], Decimal("705600.00"))
+
+    def test_confirmar_registra_la_transaccion_pendiente(self):
         response = self.client.post(
             reverse("compra-web-create"),
-            {"moneda": "USD", "monto_divisa": "100.00"},
+            self._datos(confirmado="True", id_tasa_vista=self.tasa_usd.id_tasa),
             HTTP_HOST="127.0.0.1",
         )
 
@@ -435,182 +479,160 @@ class CompraDivisaWebTests(TestCase):
         self.assertEqual(transaccion.tasa_aplicada, Decimal("7350.0000"))
         self.assertEqual(transaccion.total_pyg, Decimal("705600.00"))
 
-    def test_compra_rechaza_destino_en_otra_moneda(self):
-        destino_eur = self._crear_destino(moneda=self.eur, numero_cuenta="5555555555")
+    def test_confirmar_guarda_el_metodo_de_pago_elegido(self):
+        self.client.post(
+            reverse("compra-web-create"),
+            self._datos(confirmado="True", id_tasa_vista=self.tasa_usd.id_tasa),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(Transaccion.objects.get().metodo_pago, self.metodo_pago)
+
+    def test_confirmar_con_cotizacion_cambiada_advierte_y_no_persiste(self):
+        self._publicar_nueva_tasa("7400.0000")
 
         response = self.client.post(
             reverse("compra-web-create"),
-            {
-                "moneda": "USD",
-                "monto_divisa": "100.00",
-                "destino_acreditacion": destino_eur.id_destino,
-            },
+            self._datos(confirmado="True", id_tasa_vista=self.tasa_usd.id_tasa),
             HTTP_HOST="127.0.0.1",
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(Transaccion.objects.exists())
+        self.assertTrue(response.context["modo_confirmacion"])
+        self.assertTrue(response.context["advertencia_cotizacion"])
+        self.assertEqual(response.context["resumen"]["total_pyg"], Decimal("710400.00"))
+        self.assertEqual(Transaccion.objects.count(), 0)
 
-    def test_compra_rechaza_destino_de_otro_cliente(self):
-        ajeno = self._crear_destino(cliente=self.otro_cliente, numero_cuenta="9999999999")
-
-        response = self.client.post(
-            reverse("compra-web-create"),
-            {
-                "moneda": "USD",
-                "monto_divisa": "100.00",
-                "destino_acreditacion": ajeno.id_destino,
-            },
-            HTTP_HOST="127.0.0.1",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(Transaccion.objects.exists())
-
-    def test_compra_acepta_destino_propio_en_la_misma_moneda(self):
-        destino = self._crear_destino()
+    def test_confirmar_de_nuevo_tras_la_advertencia_registra_con_la_tasa_nueva(self):
+        tasa_nueva = self._publicar_nueva_tasa("7400.0000")
 
         self.client.post(
             reverse("compra-web-create"),
-            {
-                "moneda": "USD",
-                "monto_divisa": "100.00",
-                "destino_acreditacion": destino.id_destino,
-            },
+            self._datos(confirmado="True", id_tasa_vista=tasa_nueva.id_tasa),
             HTTP_HOST="127.0.0.1",
         )
 
         transaccion = Transaccion.objects.get()
-        self.assertEqual(transaccion.destino_acreditacion, destino)
+        self.assertEqual(transaccion.tasa_cambio_id, tasa_nueva.id_tasa)
+        self.assertEqual(transaccion.tasa_aplicada, Decimal("7400.0000"))
+        self.assertEqual(transaccion.total_pyg, Decimal("710400.00"))
 
-    def test_revalidar_sin_cambios_permite_continuar(self):
-        transaccion = crear_transaccion_compra(
-            self.cliente, self.user, "USD", Decimal("100.00")
-        )
-
-        response = self.client.post(
-            reverse("transaccion-web-revalidar", args=[transaccion.id_transaccion]),
-            HTTP_HOST="127.0.0.1",
-        )
-
-        self.assertRedirects(
-            response,
-            reverse("transaccion-web-detail", args=[transaccion.id_transaccion]),
-        )
-        transaccion.refresh_from_db()
-        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
-        self.assertEqual(transaccion.tasa_aplicada, Decimal("7350.0000"))
-
-    def test_revalidar_con_cotizacion_nueva_muestra_los_importes_recalculados(self):
-        transaccion = crear_transaccion_compra(
-            self.cliente, self.user, "USD", Decimal("100.00")
-        )
-        self._publicar_nueva_tasa("7400.0000")
+    def test_metodo_de_pago_es_obligatorio(self):
+        datos = self._datos()
+        datos.pop("metodo_pago")
 
         response = self.client.post(
-            reverse("transaccion-web-revalidar", args=[transaccion.id_transaccion]),
+            reverse("compra-web-create"), datos, HTTP_HOST="127.0.0.1"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["modo_confirmacion"])
+        self.assertIn("metodo_pago", response.context["form"].errors)
+        self.assertEqual(Transaccion.objects.count(), 0)
+
+    def test_rechaza_metodo_de_pago_de_otro_cliente(self):
+        ajeno = self._crear_metodo_pago(cliente=self.otro_cliente)
+
+        response = self.client.post(
+            reverse("compra-web-create"),
+            self._datos(metodo_pago=ajeno.id_metodo_pago),
             HTTP_HOST="127.0.0.1",
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "transacciones/transaccion_recotizacion.html")
-        self.assertEqual(response.context["recalculo"]["total_pyg"], Decimal("710400.00"))
+        self.assertIn("metodo_pago", response.context["form"].errors)
+        self.assertEqual(Transaccion.objects.count(), 0)
 
-        # La recotizacion es solo una previsualizacion: no persiste nada.
-        transaccion.refresh_from_db()
-        self.assertEqual(transaccion.tasa_aplicada, Decimal("7350.0000"))
-
-    def test_aceptar_nueva_tasa_actualiza_la_misma_transaccion(self):
-        transaccion = crear_transaccion_compra(
-            self.cliente, self.user, "USD", Decimal("100.00")
-        )
-        identificador = transaccion.id_transaccion
-        tasa_nueva = self._publicar_nueva_tasa("7400.0000")
+    def test_rechaza_metodo_de_pago_inactivo(self):
+        inactivo = self._crear_metodo_pago(activo=False, ultimos_cuatro_digitos="4444")
 
         response = self.client.post(
-            reverse("transaccion-web-aceptar-tasa", args=[identificador]),
+            reverse("compra-web-create"),
+            self._datos(metodo_pago=inactivo.id_metodo_pago),
             HTTP_HOST="127.0.0.1",
         )
 
-        self.assertRedirects(
-            response, reverse("transaccion-web-detail", args=[identificador])
-        )
-        transaccion.refresh_from_db()
-        self.assertEqual(Transaccion.objects.count(), 1)
-        self.assertEqual(transaccion.id_transaccion, identificador)
-        self.assertEqual(transaccion.tasa_cambio_id, tasa_nueva.id_tasa)
-        self.assertEqual(transaccion.tasa_aplicada, Decimal("7400.0000"))
-        self.assertEqual(transaccion.subtotal_pyg, Decimal("740000.00"))
-        self.assertEqual(transaccion.beneficio_monto_pyg, Decimal("37000.00"))
-        self.assertEqual(transaccion.comision_monto_pyg, Decimal("7400.00"))
-        self.assertEqual(transaccion.total_pyg, Decimal("710400.00"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("metodo_pago", response.context["form"].errors)
 
-    def test_confirmacion_de_cancelacion_se_renderiza(self):
+    def test_rechaza_destino_en_otra_moneda(self):
+        destino_eur = self._crear_destino(moneda=self.eur, numero_cuenta="5555555555")
+
+        response = self.client.post(
+            reverse("compra-web-create"),
+            self._datos(destino_acreditacion=destino_eur.id_destino),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("destino_acreditacion", response.context["form"].errors)
+        self.assertEqual(Transaccion.objects.count(), 0)
+
+    def test_rechaza_destino_de_otro_cliente(self):
+        ajeno = self._crear_destino(cliente=self.otro_cliente, numero_cuenta="9999999999")
+
+        response = self.client.post(
+            reverse("compra-web-create"),
+            self._datos(destino_acreditacion=ajeno.id_destino),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("destino_acreditacion", response.context["form"].errors)
+
+    def test_acepta_destino_propio_en_la_misma_moneda(self):
+        destino = self._crear_destino()
+
+        self.client.post(
+            reverse("compra-web-create"),
+            self._datos(
+                confirmado="True",
+                id_tasa_vista=self.tasa_usd.id_tasa,
+                destino_acreditacion=destino.id_destino,
+            ),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(Transaccion.objects.get().destino_acreditacion, destino)
+
+    def test_detalle_indica_que_la_operacion_esta_pendiente(self):
         transaccion = crear_transaccion_compra(
-            self.cliente, self.user, "USD", Decimal("100.00")
+            self.cliente,
+            self.user,
+            "USD",
+            Decimal("100.00"),
+            metodo_pago=self.metodo_pago,
         )
 
         response = self.client.get(
-            reverse("transaccion-web-cancelar", args=[transaccion.id_transaccion]),
+            reverse("transaccion-web-detail", args=[transaccion.id_transaccion]),
             HTTP_HOST="127.0.0.1",
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "transacciones/transaccion_confirm_cancel.html")
-        transaccion.refresh_from_db()
-        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
-
-    def test_cancelar_deja_la_operacion_cancelada_y_previa_al_pago(self):
-        transaccion = crear_transaccion_compra(
-            self.cliente, self.user, "USD", Decimal("100.00")
-        )
-
-        response = self.client.post(
-            reverse("transaccion-web-cancelar", args=[transaccion.id_transaccion]),
-            {"motivo_cancelacion": "El cliente rechazo la nueva cotizacion."},
-            HTTP_HOST="127.0.0.1",
-        )
-
-        self.assertRedirects(
+        self.assertContains(response, "PENDIENTE")
+        self.assertContains(
             response,
-            reverse("transaccion-web-detail", args=[transaccion.id_transaccion]),
+            reverse("transaccion-web-comprobante", args=[transaccion.id_transaccion]),
         )
-        transaccion.refresh_from_db()
-        self.assertEqual(transaccion.estado, EstadoTransaccion.CANCELADA)
-        self.assertNotEqual(transaccion.estado, EstadoTransaccion.ANULADA)
-        self.assertEqual(transaccion.etapa_cancelacion, EtapaCancelacion.PREVIA_PAGO)
-        self.assertIsNotNone(transaccion.cancelada_en)
-        self.assertIsNone(transaccion.completada_en)
 
-    def test_cancelar_conserva_los_importes_de_la_operacion(self):
+    def test_comprobante_se_renderiza_para_la_operacion_propia(self):
         transaccion = crear_transaccion_compra(
-            self.cliente, self.user, "USD", Decimal("100.00")
+            self.cliente,
+            self.user,
+            "USD",
+            Decimal("100.00"),
+            metodo_pago=self.metodo_pago,
         )
 
-        self.client.post(
-            reverse("transaccion-web-cancelar", args=[transaccion.id_transaccion]),
-            {"motivo_cancelacion": ""},
+        response = self.client.get(
+            reverse("transaccion-web-comprobante", args=[transaccion.id_transaccion]),
             HTTP_HOST="127.0.0.1",
         )
 
-        transaccion.refresh_from_db()
-        self.assertEqual(transaccion.total_pyg, Decimal("705600.00"))
-        self.assertEqual(transaccion.tasa_aplicada, Decimal("7350.0000"))
-
-    def test_no_se_puede_cancelar_dos_veces(self):
-        transaccion = crear_transaccion_compra(
-            self.cliente, self.user, "USD", Decimal("100.00")
-        )
-        cancelar_transaccion(transaccion, motivo="Primera cancelacion.")
-
-        self.client.post(
-            reverse("transaccion-web-cancelar", args=[transaccion.id_transaccion]),
-            {"motivo_cancelacion": "Segunda cancelacion."},
-            HTTP_HOST="127.0.0.1",
-        )
-
-        transaccion.refresh_from_db()
-        self.assertEqual(transaccion.motivo_cancelacion, "Primera cancelacion.")
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "transacciones/comprobante.html")
+        self.assertContains(response, "PENDIENTE")
 
     def test_no_puede_ver_la_operacion_de_otro_cliente(self):
         ajena = crear_transaccion_compra(
@@ -624,17 +646,14 @@ class CompraDivisaWebTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_no_puede_cancelar_la_operacion_de_otro_cliente(self):
+    def test_no_puede_ver_el_comprobante_de_otro_cliente(self):
         ajena = crear_transaccion_compra(
             self.otro_cliente, self.user, "USD", Decimal("100.00")
         )
 
-        response = self.client.post(
-            reverse("transaccion-web-cancelar", args=[ajena.id_transaccion]),
-            {"motivo_cancelacion": "Intento indebido."},
+        response = self.client.get(
+            reverse("transaccion-web-comprobante", args=[ajena.id_transaccion]),
             HTTP_HOST="127.0.0.1",
         )
 
         self.assertEqual(response.status_code, 404)
-        ajena.refresh_from_db()
-        self.assertEqual(ajena.estado, EstadoTransaccion.PENDIENTE)

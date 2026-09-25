@@ -4,6 +4,127 @@
 
 {% block content %}
 <div class="container mt-4">
+
+{% if modo_confirmacion %}
+
+    <h1>Resumen de la compra</h1>
+
+    {% if advertencia_cotizacion %}
+    <div class="alert alert-warning mt-3">
+        <strong>La cotización cambió.</strong>
+        Mientras revisabas la operación se publicó una nueva cotización, así que
+        los importes se recalcularon. Revisalos antes de confirmar.
+    </div>
+    {% else %}
+    <p class="text-body-secondary">
+        Revisá los datos antes de confirmar. La operación todavía no fue registrada.
+    </p>
+    {% endif %}
+
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Operación</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered mb-0">
+                    <tbody>
+                        <tr>
+                            <th style="width: 40%">Moneda a comprar</th>
+                            <td>{{ resumen.monto_divisa }} {{ resumen.moneda.codigo }}</td>
+                        </tr>
+                        <tr>
+                            <th>Cotización aplicada</th>
+                            <td>
+                                {{ resumen.tasa_aplicada }} PYG por {{ resumen.moneda.codigo }}
+                                <div class="form-text">
+                                    Vigente desde {{ resumen.fecha_vigencia_tasa }}
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Destino de acreditación</th>
+                            <td>
+                                {% if destino %}
+                                    {{ destino.etiqueta }} ({{ destino.moneda_id }})
+                                {% else %}
+                                    Sin definir
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Método de pago</th>
+                            <td>
+                                {{ metodo_pago.get_tipo_display }} ·
+                                {{ metodo_pago.identificacion }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Desglose en guaraníes</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered mb-0">
+                    <tbody>
+                        <tr>
+                            <th style="width: 40%">Subtotal</th>
+                            <td>{{ resumen.subtotal_pyg }} PYG</td>
+                        </tr>
+                        <tr>
+                            <th>
+                                Beneficio {{ categoria_label }}
+                                ({{ resumen.beneficio_porcentaje }}%)
+                            </th>
+                            <td>
+                                − {{ resumen.beneficio_monto_pyg }} PYG
+                                {% if resumen.beneficio_monto_pyg > 0 %}
+                                <div class="form-text">
+                                    Aplicado sobre {{ resumen.monto_beneficiado_pyg }} PYG,
+                                    con un límite de {{ resumen.limite_beneficio_pyg }} PYG.
+                                </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Comisión de compra ({{ resumen.comision_porcentaje }}%)</th>
+                            <td>+ {{ resumen.comision_monto_pyg }} PYG</td>
+                        </tr>
+                        <tr class="table-active">
+                            <th>Total a pagar</th>
+                            <td><strong>{{ resumen.total_pyg }} PYG</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" class="mt-4 d-inline">
+        {% csrf_token %}
+        <input type="hidden" name="moneda" value="{{ form.moneda.value }}">
+        <input type="hidden" name="monto_divisa" value="{{ form.monto_divisa.value }}">
+        <input type="hidden" name="destino_acreditacion" value="{{ form.destino_acreditacion.value|default_if_none:'' }}">
+        <input type="hidden" name="metodo_pago" value="{{ form.metodo_pago.value }}">
+        <input type="hidden" name="id_tasa_vista" value="{{ tasa_vigente.id_tasa }}">
+        <input type="hidden" name="confirmado" value="True">
+        <button type="submit" class="btn btn-primary">
+            Confirmar compra
+        </button>
+    </form>
+
+    <a href="{% url 'compra-web-create' %}" class="btn btn-outline-danger mt-4">
+        Cancelar compra
+    </a>
+
+{% else %}
+
     <h1>{{ page_title }}</h1>
 
     <p class="text-body-secondary">
@@ -62,6 +183,21 @@
             {% endfor %}
         </div>
 
+        <div class="mb-3">
+            <label for="{{ form.metodo_pago.id_for_label }}" class="form-label">
+                {{ form.metodo_pago.label }}
+            </label>
+            {{ form.metodo_pago }}
+            <div class="form-text">
+                Con qué vas a abonar la operación.
+                <a href="{% url 'metodopago-web-create' %}">Registrar un método de pago</a>.
+            </div>
+
+            {% for error in form.metodo_pago.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
         <button type="submit" class="btn btn-primary">
             Continuar
         </button>
@@ -70,5 +206,8 @@
             Cancelar
         </a>
     </form>
+
+{% endif %}
+
 </div>
 {% endblock %}

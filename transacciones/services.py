@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 from django.db import transaction as db_transaction
-from django.utils import timezone
 
 from cotizaciones.models import ConfiguracionComision, TasaCambio
 from cotizaciones.services import (
@@ -10,12 +9,7 @@ from cotizaciones.services import (
     redondear_monto,
 )
 
-from .models import (
-    EstadoTransaccion,
-    EtapaCancelacion,
-    TipoOperacion,
-    Transaccion,
-)
+from .models import TipoOperacion, Transaccion
 
 
 PYG = "PYG"
@@ -152,7 +146,15 @@ def calcular_compra(cliente, moneda_codigo, monto_divisa, tasa=None):
     }
 
 
-def crear_transaccion_compra(cliente, usuario, moneda_codigo, monto_divisa, destino=None):
+def crear_transaccion_compra(
+    cliente,
+    usuario,
+    moneda_codigo,
+    monto_divisa,
+    destino=None,
+    metodo_pago=None,
+    tasa=None,
+):
     """Registra una compra de divisas en estado pendiente.
 
     Args:
@@ -162,6 +164,10 @@ def crear_transaccion_compra(cliente, usuario, moneda_codigo, monto_divisa, dest
         monto_divisa (decimal.Decimal): Cantidad de divisa a adquirir.
         destino (destinos.models.DestinoAcreditacion or None): Destino donde
             se acreditará la divisa, si el cliente ya lo eligió.
+        metodo_pago (pagos.models.MetodoPago or None): Medio con el que el
+            cliente abonará la operación.
+        tasa (cotizaciones.models.TasaCambio or None): Cotización a aplicar.
+            Si se omite, se toma la vigente para el par.
 
     Returns:
         Transaccion: Transacción creada en estado pendiente.
@@ -172,113 +178,15 @@ def crear_transaccion_compra(cliente, usuario, moneda_codigo, monto_divisa, dest
         django.core.exceptions.ValidationError: Si la transacción resultante
             no supera las validaciones del modelo.
     """
-    calculo = calcular_compra(cliente, moneda_codigo, monto_divisa)
-
     with db_transaction.atomic():
+        calculo = calcular_compra(cliente, moneda_codigo, monto_divisa, tasa=tasa)
         transaccion = Transaccion(
             cliente=cliente,
             creada_por=usuario,
             destino_acreditacion=destino,
+            metodo_pago=metodo_pago,
             **calculo,
         )
-        transaccion.full_clean()
-        transaccion.save()
-
-    return transaccion
-
-
-def obtener_cotizacion_actualizada(transaccion):
-    """Devuelve la cotización vigente si dejó de coincidir con la de la transacción.
-
-    Args:
-        transaccion (Transaccion): Transacción pendiente a verificar.
-
-    Returns:
-        cotizaciones.models.TasaCambio or None: Tasa vigente distinta de la
-        registrada, o None si la cotización utilizada sigue vigente.
-
-    Raises:
-        OperacionCambiariaError: Si ya no existe una cotización vigente para
-            la moneda de la operación.
-    """
-    tasa_vigente = obtener_tasa_vigente_compra(transaccion.moneda_id)
-
-    if tasa_vigente.id_tasa == transaccion.tasa_cambio_id:
-        return None
-
-    return tasa_vigente
-
-
-def recalcular_con_nueva_tasa(transaccion, tasa=None):
-    """Recalcula una transacción pendiente desde cero con la cotización vigente.
-
-    Los valores anteriores se reemplazan sobre la misma fila: no se genera
-    una transacción adicional ni un registro histórico de la cotización
-    previa, tal como exige la historia de usuario.
-
-    Args:
-        transaccion (Transaccion): Transacción pendiente a recalcular.
-        tasa (cotizaciones.models.TasaCambio or None): Tasa a aplicar. Si se
-            omite, se busca la vigente para el par.
-
-    Returns:
-        Transaccion: Transacción actualizada con los nuevos importes.
-
-    Raises:
-        OperacionCambiariaError: Si la transacción no está pendiente o si no
-            hay una cotización vigente disponible.
-    """
-    if transaccion.estado != EstadoTransaccion.PENDIENTE:
-        raise OperacionCambiariaError(
-            "Solo se puede actualizar la cotización de una operación pendiente."
-        )
-
-    if transaccion.tipo_operacion != TipoOperacion.COMPRA:
-        raise OperacionCambiariaError(
-            "Este recálculo solo admite operaciones de compra de divisas."
-        )
-
-    calculo = calcular_compra(
-        transaccion.cliente,
-        transaccion.moneda_id,
-        transaccion.monto_divisa,
-        tasa=tasa,
-    )
-
-    with db_transaction.atomic():
-        for campo, valor in calculo.items():
-            setattr(transaccion, campo, valor)
-        transaccion.full_clean()
-        transaccion.save()
-
-    return transaccion
-
-
-def cancelar_transaccion(transaccion, motivo=""):
-    """Cancela una transacción pendiente antes de que se confirme su pago.
-
-    Una operación sin pago confirmado se cancela, nunca se anula, y se
-    conserva en el historial con los datos que tenía al momento de la
-    cancelación.
-
-    Args:
-        transaccion (Transaccion): Transacción pendiente a cancelar.
-        motivo (str): Motivo registrado para la cancelación.
-
-    Returns:
-        Transaccion: Transacción cancelada.
-
-    Raises:
-        OperacionCambiariaError: Si la transacción no está pendiente.
-    """
-    if transaccion.estado != EstadoTransaccion.PENDIENTE:
-        raise OperacionCambiariaError("Solo se puede cancelar una operación pendiente.")
-
-    with db_transaction.atomic():
-        transaccion.estado = EstadoTransaccion.CANCELADA
-        transaccion.cancelada_en = timezone.now()
-        transaccion.etapa_cancelacion = EtapaCancelacion.PREVIA_PAGO
-        transaccion.motivo_cancelacion = motivo
         transaccion.full_clean()
         transaccion.save()
 

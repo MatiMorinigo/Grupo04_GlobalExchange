@@ -4,17 +4,18 @@
 
 {% block content %}
 <div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <h1>Operación {{ transaccion.id_transaccion }}</h1>
-        {% if transaccion.estado == "PENDIENTE" %}
-        <span class="badge text-bg-warning">Pendiente</span>
-        {% elif transaccion.estado == "COMPLETADA" %}
-        <span class="badge text-bg-success">Completada</span>
-        {% elif transaccion.estado == "CANCELADA" %}
-        <span class="badge text-bg-secondary">Cancelada</span>
-        {% else %}
-        <span class="badge text-bg-danger">Anulada</span>
-        {% endif %}
+
+    <h1>Compra registrada</h1>
+
+    <div class="alert alert-warning mt-3">
+        <strong>
+            La operación {{ transaccion.id_transaccion }} está en estado
+            {{ transaccion.get_estado_display|upper }}.
+        </strong>
+        <div class="mt-1">
+            Todavía no fue abonada. Podés completar el pago más adelante desde
+            tus operaciones pendientes.
+        </div>
     </div>
 
     <div class="card card-primary card-outline mt-4">
@@ -26,7 +27,11 @@
                 <table class="table table-bordered mb-0">
                     <tbody>
                         <tr>
-                            <th style="width: 40%">Tipo de operación</th>
+                            <th style="width: 40%">Número de operación</th>
+                            <td>{{ transaccion.id_transaccion }}</td>
+                        </tr>
+                        <tr>
+                            <th>Tipo de operación</th>
                             <td>{{ transaccion.get_tipo_operacion_display }}</td>
                         </tr>
                         <tr>
@@ -55,7 +60,18 @@
                             </td>
                         </tr>
                         <tr>
-                            <th>Creada el</th>
+                            <th>Método de pago</th>
+                            <td>
+                                {% if transaccion.metodo_pago %}
+                                    {{ transaccion.metodo_pago.get_tipo_display }} ·
+                                    {{ transaccion.metodo_pago.identificacion }}
+                                {% else %}
+                                    Sin definir
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Registrada el</th>
                             <td>{{ transaccion.creada_en }}</td>
                         </tr>
                     </tbody>
@@ -105,33 +121,15 @@
         </div>
     </div>
 
-    {% if transaccion.estado == "CANCELADA" %}
-    <div class="alert alert-secondary mt-4">
-        <strong>Operación cancelada el {{ transaccion.cancelada_en }}.</strong>
-        <div>{{ transaccion.get_etapa_cancelacion_display }}.</div>
-        {% if transaccion.motivo_cancelacion %}
-        <div class="mt-2">Motivo: {{ transaccion.motivo_cancelacion }}</div>
-        {% endif %}
-    </div>
-    {% endif %}
-
     <div class="mt-4 d-flex flex-wrap gap-2">
-        {% if transaccion.estado == "PENDIENTE" %}
-        <form method="post" action="{% url 'transaccion-web-revalidar' transaccion.id_transaccion %}">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-primary">
-                Continuar al pago
-            </button>
-        </form>
         <a
-            href="{% url 'transaccion-web-cancelar' transaccion.id_transaccion %}"
-            class="btn btn-outline-danger"
+            href="{% url 'transaccion-web-comprobante' transaccion.id_transaccion %}"
+            class="btn btn-primary"
         >
-            Cancelar operación
+            Descargar comprobante
         </a>
-        {% endif %}
-        <a href="{% url 'compra-web-create' %}" class="btn btn-secondary">
-            Nueva operación
+        <a href="{% url 'home' %}" class="btn btn-secondary">
+            Volver al menú principal
         </a>
     </div>
 </div>

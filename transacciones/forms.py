@@ -2,15 +2,51 @@ from django import forms
 
 from cotizaciones.models import Moneda
 from destinos.models import DestinoAcreditacion
+from pagos.models import MetodoPago
+
+
+class MetodoPagoChoiceField(forms.ModelChoiceField):
+    """Presenta cada método de pago con su tipo y su identificación enmascarada."""
+
+    def label_from_instance(self, obj):
+        """Construye la etiqueta visible de un método de pago.
+
+        Args:
+            obj (pagos.models.MetodoPago): Método de pago a describir.
+
+        Returns:
+            str: Tipo del método junto con su identificación.
+        """
+        return f"{obj.get_tipo_display()} · {obj.identificacion}"
+
+
+class DestinoAcreditacionChoiceField(forms.ModelChoiceField):
+    """Presenta cada destino con su moneda, para que la elección sea inequívoca."""
+
+    def label_from_instance(self, obj):
+        """Construye la etiqueta visible de un destino de acreditación.
+
+        Args:
+            obj (destinos.models.DestinoAcreditacion): Destino a describir.
+
+        Returns:
+            str: Moneda y etiqueta del destino.
+        """
+        return f"[{obj.moneda_id}] {obj.etiqueta}"
 
 
 class CompraDivisaForm(forms.Form):
-    """Recoge la moneda, el monto y el destino de una compra de divisas.
+    """Recoge los datos de una compra de divisas y su paso de confirmación.
 
     Solo ofrece monedas extranjeras habilitadas que tengan una cotización
-    vigente, y destinos de acreditación activos del cliente que opera. La
-    compatibilidad entre el destino elegido y la moneda se verifica al
-    limpiar el formulario.
+    vigente, y destinos de acreditación y métodos de pago activos del cliente
+    que opera. La compatibilidad entre el destino elegido y la moneda se
+    verifica al limpiar el formulario.
+
+    Los campos ocultos ``confirmado`` e ``id_tasa_vista`` sostienen el paso de
+    confirmación sin recurrir a la sesión: el primero distingue el envío que
+    solo pide el resumen del que registra la operación, y el segundo permite
+    detectar si la cotización cambió mientras el cliente revisaba el resumen.
     """
     moneda = forms.ModelChoiceField(
         label="Moneda a comprar",
@@ -43,7 +79,7 @@ class CompraDivisaForm(forms.Form):
             "invalid": "Ingresá un monto válido.",
         },
     )
-    destino_acreditacion = forms.ModelChoiceField(
+    destino_acreditacion = DestinoAcreditacionChoiceField(
         label="Destino de acreditación",
         queryset=DestinoAcreditacion.objects.none(),
         required=False,
@@ -53,6 +89,18 @@ class CompraDivisaForm(forms.Form):
             "invalid_choice": "Seleccioná un destino de acreditación propio y activo.",
         },
     )
+    metodo_pago = MetodoPagoChoiceField(
+        label="Método de pago",
+        queryset=MetodoPago.objects.none(),
+        empty_label="Seleccioná un método de pago",
+        widget=forms.Select(attrs={"class": "form-select"}),
+        error_messages={
+            "required": "Seleccioná con qué método vas a pagar la operación.",
+            "invalid_choice": "Seleccioná un método de pago propio y activo.",
+        },
+    )
+    confirmado = forms.BooleanField(required=False, widget=forms.HiddenInput())
+    id_tasa_vista = forms.IntegerField(required=False, widget=forms.HiddenInput())
 
     def __init__(self, *args, cliente=None, **kwargs):
         """Acota las opciones del formulario al cliente que realiza la operación.
@@ -83,6 +131,9 @@ class CompraDivisaForm(forms.Form):
                 .select_related("moneda")
                 .order_by("moneda_id", "-creado_en")
             )
+            self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(
+                cliente=cliente, activo=True
+            ).order_by("-creado_en")
 
     def clean(self):
         """Comprueba que el destino elegido admita la moneda de la operación.
@@ -102,18 +153,3 @@ class CompraDivisaForm(forms.Form):
             )
 
         return cleaned_data
-
-
-class CancelarTransaccionForm(forms.Form):
-    """Recoge el motivo con el que se cancela una operación pendiente."""
-    motivo_cancelacion = forms.CharField(
-        label="Motivo de la cancelación",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "class": "form-control",
-                "rows": 3,
-                "placeholder": "Opcional. Indicá por qué cancelás la operación.",
-            }
-        ),
-    )
