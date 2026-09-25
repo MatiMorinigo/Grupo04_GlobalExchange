@@ -255,12 +255,26 @@
                     </li>
                     {% endif %}
 
+                    {% if request.user.is_authenticated %}
+                    <li class="nav-item">
+
+                        <a href="{% url 'compra-web-create' %}"
+                           class="nav-link {% if active_menu == 'transacciones' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-arrow-left-right"></i>
+
+                            <p>Comprar divisas</p>
+
+                        </a>
+
+                    </li>
+                    {% else %}
                     <li class="nav-item">
 
                         <span class="nav-link disabled text-body-secondary"
                               aria-disabled="true"
                               data-bs-toggle="tooltip"
-                              data-bs-title="Módulo aún no disponible">
+                              data-bs-title="Iniciá sesión para operar">
 
                             <i class="nav-icon bi bi-arrow-left-right"></i>
 
@@ -269,6 +283,7 @@
                         </span>
 
                     </li>
+                    {% endif %}
 
 
                     <li class="nav-item">
@@ -293,6 +308,19 @@
                             <i class="nav-icon bi bi-credit-card"></i>
 
                             <p>Métodos de pago</p>
+
+                        </a>
+
+                    </li>
+
+                    <li class="nav-item">
+
+                        <a href="{% url 'destino-web-list' %}"
+                           class="nav-link {% if active_menu == 'destinos' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-bank"></i>
+
+                            <p>Destinos de acreditación</p>
 
                         </a>
 
@@ -337,12 +365,14 @@
 
                     <li class="nav-item">
 
-                        <li class="nav-item">
-                            <a href="{% url 'configuracion_beneficios' %}" class="nav-link">
-                                <i class="nav-icon bi bi-sliders"></i>
-                                <p>Configuración</p>
-                            </a>
-                        </li>
+                        <a href="{% url 'configuracion_beneficios' %}"
+                           class="nav-link {% if active_menu == 'configuracion' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-sliders"></i>
+
+                            <p>Configuración</p>
+
+                        </a>
 
                     </li>
                     {% endif %}

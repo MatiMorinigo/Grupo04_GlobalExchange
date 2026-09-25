@@ -75,6 +75,22 @@ class Transaccion(models.Model):
         related_name="transacciones",
         verbose_name="Tasa de cambio",
     )
+    destino_acreditacion = models.ForeignKey(
+        "destinos.DestinoAcreditacion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transacciones",
+        verbose_name="Destino de acreditacion",
+    )
+    metodo_pago = models.ForeignKey(
+        "pagos.MetodoPago",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transacciones",
+        verbose_name="Metodo de pago",
+    )
     tasa_aplicada = models.DecimalField(
         max_digits=18,
         decimal_places=4,
@@ -342,6 +358,22 @@ class Transaccion(models.Model):
                 errores["fecha_vigencia_tasa"] = (
                     "La vigencia registrada debe coincidir con la tasa aplicada."
                 )
+
+        if self.destino_acreditacion_id:
+            destino = self.destino_acreditacion
+            if destino.cliente_id != self.cliente_id:
+                errores["destino_acreditacion"] = (
+                    "El destino de acreditacion debe pertenecer al mismo cliente."
+                )
+            elif destino.moneda_id != self.moneda_id:
+                errores["destino_acreditacion"] = (
+                    "El destino de acreditacion debe admitir la moneda de la operacion."
+                )
+
+        if self.metodo_pago_id and self.metodo_pago.cliente_id != self.cliente_id:
+            errores["metodo_pago"] = (
+                "El metodo de pago debe pertenecer al mismo cliente."
+            )
 
         if self.estado == EstadoTransaccion.CANCELADA:
             if not self.cancelada_en:

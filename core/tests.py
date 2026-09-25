@@ -31,7 +31,7 @@ class HomeViewTests(SimpleTestCase):
         self.assertIn('id="main-content"', content)
         self.assertIn("Menú principal", content)
         self.assertIn("Disponible", content)
-        self.assertIn("Próximamente", content)
+        self.assertIn("Iniciá sesión para operar", content)
 
     def test_authenticated_user_sees_full_name_and_logout(self):
         user = User(username="jperez", first_name="Juan", last_name="Pérez")
@@ -72,7 +72,7 @@ class HomeViewTests(SimpleTestCase):
         content = response.content.decode("utf-8")
 
         self.assertIn("Operaciones de cambio", content)
-        self.assertIn("Módulo aún no disponible", content)
+        self.assertIn("Iniciá sesión para operar", content)
         self.assertEqual(content.count('<span class="small-box-footer'), 1)
         self.assertEqual(content.count('aria-disabled="true"'), 2)
         self.assertNotIn("Placeholder", content)

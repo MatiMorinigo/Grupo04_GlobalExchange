@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Operación {{ transaccion.id_transaccion }} | Global Exchange{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <h1>Compra registrada</h1>
+
+    <div class="alert alert-warning mt-3">
+        <strong>
+            La operación {{ transaccion.id_transaccion }} está en estado
+            {{ transaccion.get_estado_display|upper }}.
+        </strong>
+        <div class="mt-1">
+            Todavía no fue abonada. Podés completar el pago más adelante desde
+            tus operaciones pendientes.
+        </div>
+    </div>
+
+    {% include "transacciones/_cliente_operando.html" with cliente=transaccion.cliente etiqueta="Cliente de la operación" %}
+
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Condiciones de la operación</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered mb-0">
+                    <tbody>
+                        <tr>
+                            <th style="width: 40%">Número de operación</th>
+                            <td>{{ transaccion.id_transaccion }}</td>
+                        </tr>
+                        <tr>
+                            <th>Tipo de operación</th>
+                            <td>{{ transaccion.get_tipo_operacion_display }}</td>
+                        </tr>
+                        <tr>
+                            <th>Monto a recibir</th>
+                            <td>{{ transaccion.monto_divisa }} {{ transaccion.moneda.codigo }}</td>
+                        </tr>
+                        <tr>
+                            <th>Cotización aplicada</th>
+                            <td>
+                                {{ transaccion.tasa_aplicada }} PYG por
+                                {{ transaccion.moneda.codigo }}
+                                <div class="form-text">
+                                    Vigente desde {{ transaccion.fecha_vigencia_tasa }}
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Destino de acreditación</th>
+                            <td>
+                                {% if transaccion.destino_acreditacion %}
+                                    {{ transaccion.destino_acreditacion.etiqueta }}
+                                    ({{ transaccion.destino_acreditacion.moneda_id }})
+                                {% else %}
+                                    Sin definir
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Método de pago</th>
+                            <td>
+                                {% if transaccion.metodo_pago %}
+                                    {{ transaccion.metodo_pago.get_tipo_display }} ·
+                                    {{ transaccion.metodo_pago.identificacion }}
+                                {% else %}
+                                    Sin definir
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Registrada el</th>
+                            <td>{{ transaccion.creada_en }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Desglose en guaraníes</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered mb-0">
+                    <tbody>
+                        <tr>
+                            <th style="width: 40%">Subtotal</th>
+                            <td>{{ transaccion.subtotal_pyg }} PYG</td>
+                        </tr>
+                        <tr>
+                            <th>
+                                Beneficio {{ transaccion.get_categoria_aplicada_display }}
+                                ({{ transaccion.beneficio_porcentaje }}%)
+                            </th>
+                            <td>
+                                − {{ transaccion.beneficio_monto_pyg }} PYG
+                                {% if transaccion.beneficio_monto_pyg > 0 %}
+                                <div class="form-text">
+                                    Aplicado sobre {{ transaccion.monto_beneficiado_pyg }} PYG,
+                                    con un límite de {{ transaccion.limite_beneficio_pyg }} PYG.
+                                </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Comisión de compra ({{ transaccion.comision_porcentaje }}%)</th>
+                            <td>+ {{ transaccion.comision_monto_pyg }} PYG</td>
+                        </tr>
+                        <tr class="table-active">
+                            <th>Total a pagar</th>
+                            <td><strong>{{ transaccion.total_pyg }} PYG</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4 d-flex flex-wrap gap-2">
+        <a
+            href="{% url 'transaccion-web-comprobante' transaccion.id_transaccion %}"
+            class="btn btn-primary"
+        >
+            Descargar comprobante
+        </a>
+        <a href="{% url 'home' %}" class="btn btn-secondary">
+            Volver al menú principal
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -9,6 +9,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from core.mixins import AdminRequiredMixin
+from cotizaciones.models import ConfiguracionComision
 from .forms import ClienteForm, ConfiguracionBeneficioCategoriaForm
 from .models import Cliente, ConfiguracionBeneficioCategoria
 from .permissions import EsAdministrador
@@ -360,6 +361,22 @@ class ConfiguracionBeneficioCategoriaListView(AdminRequiredMixin, ListView):
             QuerySet: Configuraciones de beneficios por categoría.
         """
         return ConfiguracionBeneficioCategoria.objects.order_by("categoria")
+
+    def get_context_data(self, **kwargs):
+        """
+        Agrega la configuración de comisiones y marca el menú de configuración.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto con los beneficios por categoría y las comisiones
+            vigentes del sistema.
+        """
+        context = super().get_context_data(**kwargs)
+        context["configuracion_comision"] = ConfiguracionComision.obtener()
+        context["active_menu"] = "configuracion"
+        return context
 
 class ConfiguracionBeneficioCategoriaUpdateView(AdminRequiredMixin, UpdateView):
     """

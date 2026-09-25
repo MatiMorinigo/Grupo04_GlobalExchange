@@ -11,8 +11,21 @@ from rest_framework.views import APIView
 
 from core.keycloak import tiene_rol
 from core.mixins import AdminRequiredMixin, AnalistaCambiarioRequiredMixin
-from .forms import MonedaForm, SimulacionConversionForm, TasaCambioCrearForm, TasaCambioEditarForm
-from .models import AccionAuditoriaMoneda, AuditoriaMoneda, AuditoriaTasaCambio, Moneda, TasaCambio
+from .forms import (
+    ConfiguracionComisionForm,
+    MonedaForm,
+    SimulacionConversionForm,
+    TasaCambioCrearForm,
+    TasaCambioEditarForm,
+)
+from .models import (
+    AccionAuditoriaMoneda,
+    AuditoriaMoneda,
+    AuditoriaTasaCambio,
+    ConfiguracionComision,
+    Moneda,
+    TasaCambio,
+)
 from .serializers import MonedaSerializer, SimulacionConversionSerializer, TasaCambioSerializer
 from .services import SimulacionConversionError, simular_conversion
 from clientes.models import CategoriaCliente
@@ -680,3 +693,61 @@ class SimulacionConversionWebView(FormView):
                 resultado=resultado,
             )
         )
+
+
+class ConfiguracionComisionUpdateView(AdminRequiredMixin, UpdateView):
+    """Permite al administrador modificar las comisiones de compra y venta del sistema."""
+
+    model = ConfiguracionComision
+    form_class = ConfiguracionComisionForm
+    template_name = "cotizaciones/configuracion_comision_form.html"
+    success_url = reverse_lazy("configuracion_beneficios")
+
+    def get_object(self, queryset=None):
+        """Devuelve la única configuración de comisiones, creándola si no existe.
+
+        Args:
+            queryset (django.db.models.QuerySet or None): Conjunto de
+                consulta propuesto por la vista base, que no se utiliza.
+
+        Returns:
+            ConfiguracionComision: Configuración vigente del sistema.
+        """
+        return ConfiguracionComision.obtener()
+
+    def form_valid(self, form):
+        """Registra quién modificó la configuración y confirma el guardado.
+
+        Args:
+            form (ConfiguracionComisionForm): Formulario validado con los
+                nuevos porcentajes de comisión.
+
+        Returns:
+            django.http.HttpResponseRedirect: Redirección a la sección de
+            configuración del sistema.
+        """
+        form.instance.modificado_por = self.request.user
+        messages.success(
+            self.request,
+            "La configuración de comisiones fue actualizada correctamente.",
+        )
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        """Prepara los textos y el menú del formulario de comisiones.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto con el menú activo, el título y la etiqueta del botón.
+        """
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "active_menu": "configuracion",
+                "page_title": "Editar comisiones",
+                "submit_label": "Guardar cambios",
+            }
+        )
+        return context

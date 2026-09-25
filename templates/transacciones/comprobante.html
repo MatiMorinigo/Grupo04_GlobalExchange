@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Comprobante {{ transaccion.id_transaccion }} | Global Exchange{% endblock %}
+
+{% block styles %}
+<style>
+    .comprobante {
+        max-width: 42rem;
+    }
+
+    .comprobante__marca {
+        border-bottom: 2px solid currentColor;
+    }
+
+    @media print {
+        /* Deja en la hoja solo el comprobante: fuera menú, cabecera y botones. */
+        .app-sidebar,
+        .app-header,
+        .app-footer,
+        .skip-link,
+        .no-imprimir {
+            display: none !important;
+        }
+
+        .app-wrapper,
+        .app-main,
+        .app-content,
+        .container-fluid,
+        .container {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        .comprobante {
+            max-width: none;
+        }
+
+        .card {
+            border: 1px solid #000 !important;
+            break-inside: avoid;
+        }
+
+        a[href]::after {
+            content: "";
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 comprobante">
+
+    <div class="d-flex justify-content-between align-items-start comprobante__marca pb-2">
+        <div>
+            <h1 class="h4 mb-0">Global Exchange</h1>
+            <div class="text-body-secondary">Comprobante de compra de divisas</div>
+        </div>
+        <div class="text-end">
+            <div class="fw-bold">N.º {{ transaccion.id_transaccion }}</div>
+            <div class="text-body-secondary">{{ transaccion.creada_en|date:"d/m/Y H:i" }}</div>
+        </div>
+    </div>
+
+    <p class="mt-3">
+        Estado de la operación:
+        <strong>{{ transaccion.get_estado_display|upper }}</strong>.
+        Este comprobante acredita el registro de la operación; no constituye
+        constancia de pago.
+    </p>
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <table class="table table-sm mb-0">
+                <tbody>
+                    <tr>
+                        <th style="width: 45%">Cliente</th>
+                        <td>{{ transaccion.cliente.nombre }} ({{ transaccion.cliente.ruc }})</td>
+                    </tr>
+                    <tr>
+                        <th>Operación</th>
+                        <td>{{ transaccion.get_tipo_operacion_display }}</td>
+                    </tr>
+                    <tr>
+                        <th>Monto a recibir</th>
+                        <td>{{ transaccion.monto_divisa }} {{ transaccion.moneda.codigo }}</td>
+                    </tr>
+                    <tr>
+                        <th>Cotización aplicada</th>
+                        <td>{{ transaccion.tasa_aplicada }} PYG por {{ transaccion.moneda.codigo }}</td>
+                    </tr>
+                    <tr>
+                        <th>Destino de acreditación</th>
+                        <td>
+                            {% if transaccion.destino_acreditacion %}
+                                {{ transaccion.destino_acreditacion.etiqueta }}
+                                ({{ transaccion.destino_acreditacion.moneda_id }})
+                            {% else %}
+                                Sin definir
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Método de pago</th>
+                        <td>
+                            {% if transaccion.metodo_pago %}
+                                {{ transaccion.metodo_pago.get_tipo_display }} ·
+                                {{ transaccion.metodo_pago.identificacion }}
+                            {% else %}
+                                Sin definir
+                            {% endif %}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <table class="table table-sm mb-0">
+                <tbody>
+                    <tr>
+                        <th style="width: 45%">Subtotal</th>
+                        <td>{{ transaccion.subtotal_pyg }} PYG</td>
+                    </tr>
+                    <tr>
+                        <th>
+                            Beneficio {{ transaccion.get_categoria_aplicada_display }}
+                            ({{ transaccion.beneficio_porcentaje }}%)
+                        </th>
+                        <td>− {{ transaccion.beneficio_monto_pyg }} PYG</td>
+                    </tr>
+                    <tr>
+                        <th>Comisión de compra ({{ transaccion.comision_porcentaje }}%)</th>
+                        <td>+ {{ transaccion.comision_monto_pyg }} PYG</td>
+                    </tr>
+                    <tr>
+                        <th>Total a pagar</th>
+                        <td><strong>{{ transaccion.total_pyg }} PYG</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="mt-4 d-flex flex-wrap gap-2 no-imprimir">
+        <button type="button" class="btn btn-primary" onclick="window.print()">
+            Imprimir o guardar como PDF
+        </button>
+        <a
+            href="{% url 'transaccion-web-detail' transaccion.id_transaccion %}"
+            class="btn btn-secondary"
+        >
+            Volver a la operación
+        </a>
+        <a href="{% url 'home' %}" class="btn btn-outline-secondary">
+            Volver al menú principal
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -20,6 +20,10 @@ def home(request):
         django.http.HttpResponse: Página con los módulos visibles, los
         clientes aprobados y el cliente activo.
     """
+    # Operar exige un cliente activo, así que a quien no inició sesión se le
+    # ofrece el módulo como disponible pero pendiente de autenticación.
+    autenticado = request.user.is_authenticated
+
     modules = [
         {
             "title": "Clientes",
@@ -37,15 +41,16 @@ def home(request):
         },
         {
             "title": "Operaciones de cambio",
-            "description": "Compra y venta de divisas.",
+            "description": "Compra de divisas.",
             "icon": "bi bi-arrow-left-right",
             "bg_class": "text-bg-success",
+            "href": reverse("compra-web-create") if autenticado else "",
             "link_class": "link-light",
-            "status": "No Disponible",
-            "status_class": "text-bg-secondary",
-            "enabled": False,
-            "action_label": "Próximamente",
-            "disabled_reason": "Módulo aún no disponible.",
+            "status": "Disponible" if autenticado else "Requiere sesión",
+            "status_class": "text-bg-success" if autenticado else "text-bg-secondary",
+            "enabled": autenticado,
+            "action_label": "Comprar divisas" if autenticado else "Iniciá sesión",
+            "disabled_reason": "" if autenticado else "Iniciá sesión para operar.",
         },
         {
             "title": "Cotizaciones",
@@ -75,15 +80,16 @@ def home(request):
         },
         {
             "title": "Configuración",
-            "description": "Parámetros generales de la plataforma.",
+            "description": "Beneficios por categoría y comisiones del sistema.",
             "icon": "bi bi-sliders",
             "bg_class": "text-bg-secondary",
+            "href": reverse("configuracion_beneficios"),
             "link_class": "link-light",
-            "status": "No Disponible",
-            "status_class": "text-bg-secondary",
-            "enabled": False,
-            "action_label": "Próximamente",
-            "disabled_reason": "Módulo aún no disponible.",
+            "status": "Disponible",
+            "status_class": "text-bg-success",
+            "enabled": True,
+            "action_label": "Configurar",
+            "disabled_reason": "",
             "admin_only": True,
         },
     ]

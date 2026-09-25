@@ -1,35 +1,93 @@
 {% extends "base.html" %}
 
+{% block title %}Configuración del sistema | Global Exchange{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
-    <h1>Configuración de beneficios por categoría</h1>
+    <h1>Configuración del sistema</h1>
 
-    <table class="table table-bordered mt-3">
-        <thead>
-            <tr>
-                <th>Categoría</th>
-                <th>Beneficio (%)</th>
-                <th>Límite mensual (PYG)</th>
-                <th>Acciones</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for configuracion in configuraciones %}
-            <tr>
-                <td>{{ configuracion.get_categoria_display }}</td>
-                <td>{{ configuracion.porcentaje_beneficio }}%</td>
-                <td>{{ configuracion.limite_mensual_pyg }}</td>
-                <td>
-                    <a
-                        href="{% url 'configuracion_beneficios_editar' configuracion.pk %}"
-                        class="btn btn-sm btn-primary"
-                    >
-                        Editar
-                    </a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Configuración de beneficios por categoría</h2>
+        </div>
+
+        <div class="card-body">
+            <table class="table table-bordered mb-0">
+                <thead>
+                    <tr>
+                        <th>Categoría</th>
+                        <th>Beneficio (%)</th>
+                        <th>Límite mensual (PYG)</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for configuracion in configuraciones %}
+                    <tr>
+                        <td>{{ configuracion.get_categoria_display }}</td>
+                        <td>{{ configuracion.porcentaje_beneficio }}%</td>
+                        <td>{{ configuracion.limite_mensual_pyg }}</td>
+                        <td>
+                            <a
+                                href="{% url 'configuracion_beneficios_editar' configuracion.pk %}"
+                                class="btn btn-sm btn-primary"
+                            >
+                                Editar
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="text-center text-body-secondary">
+                            No hay categorías configuradas.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Comisiones</h2>
+        </div>
+
+        <div class="card-body">
+            <p class="text-body-secondary">
+                Porcentajes aplicados a las operaciones cambiarias. Se registran como
+                copia en cada transacción, por lo que un cambio no altera las
+                operaciones ya generadas.
+            </p>
+
+            <table class="table table-bordered mb-0">
+                <thead>
+                    <tr>
+                        <th>Operación</th>
+                        <th>Comisión (%)</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Compra de divisas</td>
+                        <td>{{ configuracion_comision.porcentaje_compra }}%</td>
+                        <td rowspan="2">
+                            <a
+                                href="{% url 'configuracion-comisiones-editar' %}"
+                                class="btn btn-sm btn-primary"
+                            >
+                                Editar
+                            </a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Venta de divisas</td>
+                        <td>{{ configuracion_comision.porcentaje_venta }}%</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 {% endblock %}
