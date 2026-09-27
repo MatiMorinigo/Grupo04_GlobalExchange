@@ -1,8 +1,11 @@
 from django import forms
 
+from clientes.models import Cliente
 from cotizaciones.models import Moneda
 from destinos.models import DestinoAcreditacion
 from pagos.models import MetodoPago
+
+from .models import EstadoTransaccion, TipoOperacion
 
 
 class MetodoPagoChoiceField(forms.ModelChoiceField):
@@ -150,6 +153,63 @@ class CompraDivisaForm(forms.Form):
                 "destino_acreditacion",
                 f"El destino seleccionado recibe {destino.moneda_id} "
                 f"y la operación es en {moneda.codigo}.",
+            )
+
+        return cleaned_data
+
+
+class HistorialTransaccionFiltroForm(forms.Form):
+    """Recoge los filtros opcionales del historial de transacciones."""
+
+    cliente = forms.ModelChoiceField(
+        label="Cliente",
+        queryset=Cliente.objects.none(),
+        required=False,
+        empty_label="Todos los clientes",
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    fecha_desde = forms.DateField(
+        label="Desde",
+        required=False,
+        widget=forms.DateInput(attrs={"class": "form-control", "type": "date"}),
+    )
+    fecha_hasta = forms.DateField(
+        label="Hasta",
+        required=False,
+        widget=forms.DateInput(attrs={"class": "form-control", "type": "date"}),
+    )
+    tipo_operacion = forms.ChoiceField(
+        label="Tipo de operación",
+        required=False,
+        choices=[("", "Todas las operaciones"), *TipoOperacion.choices],
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    estado = forms.ChoiceField(
+        label="Estado",
+        required=False,
+        choices=[("", "Todos los estados"), *EstadoTransaccion.choices],
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+
+    def __init__(self, *args, mostrar_cliente=False, **kwargs):
+        """Muestra el selector de cliente solo en el historial general."""
+
+        super().__init__(*args, **kwargs)
+        if mostrar_cliente:
+            self.fields["cliente"].queryset = Cliente.objects.order_by("nombre")
+        else:
+            self.fields.pop("cliente")
+
+    def clean(self):
+        """Comprueba que el rango de fechas tenga un orden válido."""
+
+        cleaned_data = super().clean()
+        fecha_desde = cleaned_data.get("fecha_desde")
+        fecha_hasta = cleaned_data.get("fecha_hasta")
+
+        if fecha_desde and fecha_hasta and fecha_desde > fecha_hasta:
+            raise forms.ValidationError(
+                "La fecha inicial no puede ser posterior a la fecha final."
             )
 
         return cleaned_data

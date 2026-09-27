@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Historial de transacciones | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Historial de transacciones</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Historial</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+    <div class="card-header">
+        <h3 class="card-title mb-0">Filtros</h3>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            {% if historial_general %}
+            <div class="col-lg-3 col-md-6">
+                <label class="form-label" for="{{ filtro.cliente.id_for_label }}">
+                    {{ filtro.cliente.label }}
+                </label>
+                {{ filtro.cliente }}
+            </div>
+            {% endif %}
+
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label" for="{{ filtro.fecha_desde.id_for_label }}">
+                    {{ filtro.fecha_desde.label }}
+                </label>
+                {{ filtro.fecha_desde }}
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label" for="{{ filtro.fecha_hasta.id_for_label }}">
+                    {{ filtro.fecha_hasta.label }}
+                </label>
+                {{ filtro.fecha_hasta }}
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label" for="{{ filtro.tipo_operacion.id_for_label }}">
+                    {{ filtro.tipo_operacion.label }}
+                </label>
+                {{ filtro.tipo_operacion }}
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label" for="{{ filtro.estado.id_for_label }}">
+                    {{ filtro.estado.label }}
+                </label>
+                {{ filtro.estado }}
+            </div>
+            <div class="col-lg-1 col-md-6 d-flex gap-2">
+                <button type="submit" class="btn btn-primary" title="Aplicar filtros">
+                    <i class="bi bi-funnel" aria-hidden="true"></i>
+                    <span class="visually-hidden">Filtrar</span>
+                </button>
+                <a
+                    href="{% url 'transaccion-web-historial' %}"
+                    class="btn btn-outline-secondary"
+                    title="Limpiar filtros"
+                >
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                    <span class="visually-hidden">Limpiar</span>
+                </a>
+            </div>
+
+            {% if filtro.non_field_errors %}
+            <div class="col-12">
+                <div class="alert alert-danger mb-0">{{ filtro.non_field_errors }}</div>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title mb-0">
+            {% if historial_general %}Historial general{% else %}Transacciones del cliente activo{% endif %}
+        </h3>
+    </div>
+    <div class="card-body p-0">
+        {% if transacciones %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Fecha y hora</th>
+                        <th>Cliente</th>
+                        <th>Operación</th>
+                        <th>Moneda</th>
+                        <th class="text-end">Monto</th>
+                        <th class="text-end">Tasa aplicada</th>
+                        <th class="text-end">Comisión</th>
+                        <th class="text-end">Total</th>
+                        <th>Estado</th>
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transaccion in transacciones %}
+                    <tr>
+                        <td class="fw-semibold">{{ transaccion.id_transaccion }}</td>
+                        <td class="text-nowrap">{{ transaccion.creada_en|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            {{ transaccion.cliente.nombre }}
+                            <div class="small text-secondary">{{ transaccion.cliente.ruc }}</div>
+                        </td>
+                        <td>{{ transaccion.get_tipo_operacion_display }}</td>
+                        <td>{{ transaccion.moneda.codigo }}</td>
+                        <td class="text-end text-nowrap">
+                            {{ transaccion.monto_divisa|formato_numero:2 }} {{ transaccion.moneda.codigo }}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            {{ transaccion.tasa_aplicada|formato_numero:4 }} PYG
+                        </td>
+                        <td class="text-end text-nowrap">
+                            {{ transaccion.comision_monto_pyg|formato_numero:2 }} PYG
+                            <div class="small text-secondary">
+                                {{ transaccion.comision_porcentaje|formato_numero:2 }}%
+                            </div>
+                        </td>
+                        <td class="text-end text-nowrap fw-semibold">
+                            {{ transaccion.total_pyg|formato_numero:2 }} PYG
+                        </td>
+                        <td>
+                            {% if transaccion.estado == "COMPLETADA" %}
+                            <span class="badge text-bg-success">{{ transaccion.get_estado_display }}</span>
+                            {% elif transaccion.estado == "CANCELADA" %}
+                            <span class="badge text-bg-danger">{{ transaccion.get_estado_display }}</span>
+                            {% elif transaccion.estado == "ANULADA" %}
+                            <span class="badge text-bg-secondary">{{ transaccion.get_estado_display }}</span>
+                            {% else %}
+                            <span class="badge text-bg-warning">{{ transaccion.get_estado_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a
+                                href="{% url 'transaccion-web-detail' transaccion.id_transaccion %}"
+                                class="btn btn-sm btn-outline-primary"
+                            >
+                                Ver detalle
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-secondary">
+            No se encontraron transacciones con los filtros seleccionados.
+        </div>
+        {% endif %}
+    </div>
+
+    {% if is_paginated %}
+    <div class="card-footer">
+        <nav aria-label="Paginación del historial">
+            <ul class="pagination justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% if parametros_filtro %}{{ parametros_filtro }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">
+                        Anterior
+                    </a>
+                </li>
+                {% endif %}
+                <li class="page-item disabled">
+                    <span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                </li>
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% if parametros_filtro %}{{ parametros_filtro }}&amp;{% endif %}page={{ page_obj.next_page_number }}">
+                        Siguiente
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

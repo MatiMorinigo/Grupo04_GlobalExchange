@@ -6,17 +6,29 @@
 {% block content %}
 <div class="container mt-4">
 
-    <h1>Compra registrada</h1>
+    <h1>
+        {% if transaccion.tipo_operacion == "COMPRA" %}Compra{% else %}Venta{% endif %}
+        registrada
+    </h1>
 
-    <div class="alert alert-warning mt-3">
+    <div class="alert {% if transaccion.estado == 'COMPLETADA' %}alert-success{% elif transaccion.estado == 'CANCELADA' %}alert-danger{% elif transaccion.estado == 'ANULADA' %}alert-secondary{% else %}alert-warning{% endif %} mt-3">
         <strong>
             La operación {{ transaccion.id_transaccion }} está en estado
             {{ transaccion.get_estado_display|upper }}.
         </strong>
+        {% if transaccion.estado == "PENDIENTE" %}
         <div class="mt-1">
             Todavía no fue abonada. Podés completar el pago más adelante desde
             tus operaciones pendientes.
         </div>
+        {% elif transaccion.estado == "CANCELADA" %}
+        <div class="mt-1">
+            La operación fue cancelada antes de confirmar el pago.
+            {% if transaccion.motivo_cancelacion %}
+                Motivo: {{ transaccion.motivo_cancelacion }}
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
 
     {% include "transacciones/_cliente_operando.html" with cliente=transaccion.cliente etiqueta="Cliente de la operación" %}
@@ -38,7 +50,13 @@
                             <td>{{ transaccion.get_tipo_operacion_display }}</td>
                         </tr>
                         <tr>
-                            <th>Monto a recibir</th>
+                            <th>
+                                {% if transaccion.tipo_operacion == "COMPRA" %}
+                                    Monto a recibir
+                                {% else %}
+                                    Monto entregado
+                                {% endif %}
+                            </th>
                             <td>{{ transaccion.monto_divisa|formato_numero:2 }} {{ transaccion.moneda.codigo }}</td>
                         </tr>
                         <tr>
@@ -77,6 +95,18 @@
                             <th>Registrada el</th>
                             <td>{{ transaccion.creada_en }}</td>
                         </tr>
+                        {% if transaccion.cancelada_en %}
+                        <tr>
+                            <th>Cancelada el</th>
+                            <td>{{ transaccion.cancelada_en }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if transaccion.completada_en %}
+                        <tr>
+                            <th>Completada el</th>
+                            <td>{{ transaccion.completada_en }}</td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>
@@ -101,7 +131,8 @@
                                 ({{ transaccion.beneficio_porcentaje|formato_numero:2 }}%)
                             </th>
                             <td>
-                                − {{ transaccion.beneficio_monto_pyg|formato_numero:2 }} PYG
+                                {% if transaccion.tipo_operacion == "COMPRA" %}−{% else %}+{% endif %}
+                                {{ transaccion.beneficio_monto_pyg|formato_numero:2 }} PYG
                                 {% if transaccion.beneficio_monto_pyg > 0 %}
                                 <div class="form-text">
                                     Aplicado sobre {{ transaccion.monto_beneficiado_pyg|formato_numero:2 }} PYG,
@@ -111,11 +142,23 @@
                             </td>
                         </tr>
                         <tr>
-                            <th>Comisión de compra ({{ transaccion.comision_porcentaje|formato_numero:2 }}%)</th>
-                            <td>+ {{ transaccion.comision_monto_pyg|formato_numero:2 }} PYG</td>
+                            <th>
+                                {% if transaccion.tipo_operacion == "COMPRA" %}Comisión de compra{% else %}Comisión de venta{% endif %}
+                                ({{ transaccion.comision_porcentaje|formato_numero:2 }}%)
+                            </th>
+                            <td>
+                                {% if transaccion.tipo_operacion == "COMPRA" %}+{% else %}−{% endif %}
+                                {{ transaccion.comision_monto_pyg|formato_numero:2 }} PYG
+                            </td>
                         </tr>
                         <tr class="table-active">
-                            <th>Total a pagar</th>
+                            <th>
+                                {% if transaccion.tipo_operacion == "COMPRA" %}
+                                    Total a pagar
+                                {% else %}
+                                    Total a recibir
+                                {% endif %}
+                            </th>
                             <td><strong>{{ transaccion.total_pyg|formato_numero:2 }} PYG</strong></td>
                         </tr>
                     </tbody>
@@ -125,14 +168,16 @@
     </div>
 
     <div class="mt-4 d-flex flex-wrap gap-2">
+        {% if transaccion.tipo_operacion == "COMPRA" %}
         <a
             href="{% url 'transaccion-web-comprobante' transaccion.id_transaccion %}"
             class="btn btn-primary"
         >
             Descargar comprobante
         </a>
-        <a href="{% url 'home' %}" class="btn btn-secondary">
-            Volver al menú principal
+        {% endif %}
+        <a href="{% url 'transaccion-web-historial' %}" class="btn btn-secondary">
+            Volver al historial
         </a>
     </div>
 </div>

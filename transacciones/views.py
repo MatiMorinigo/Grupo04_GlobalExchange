@@ -1,11 +1,15 @@
-from django.contrib import messages
-from django.shortcuts import redirect
-from django.views.generic import DetailView, FormView
+from functools import cached_property
 
+from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.shortcuts import redirect
+from django.views.generic import DetailView, FormView, ListView
+
+from core.keycloak import tiene_rol
 from core.mixins import ClienteActivoRequiredMixin
 from usuarios.models import obtener_cliente_activo
 
-from .forms import CompraDivisaForm
+from .forms import CompraDivisaForm, HistorialTransaccionFiltroForm
 from .models import Transaccion
 from .services import (
     OperacionCambiariaError,
@@ -178,25 +182,121 @@ class CompraDivisaWebCreateView(ClienteActivoRequiredMixin, FormView):
         return redirect("transaccion-web-detail", id_transaccion=transaccion.id_transaccion)
 
 
-class TransaccionWebDetailView(ClienteActivoRequiredMixin, DetailView):
-    """Muestra el resumen de una operación ya registrada por el cliente activo."""
+class AccesoHistorialTransaccionMixin(LoginRequiredMixin):
+    """Aplica el alcance general o por cliente activo a las consultas."""
+
+    @cached_property
+    def historial_general(self):
+        """Indica si el usuario puede consultar operaciones de todo el sistema."""
+
+        return tiene_rol(self.request, "administrador") or tiene_rol(
+            self.request, "analista_cambiario"
+        )
+
+    @cached_property
+    def cliente_activo(self):
+        """Obtiene una sola vez el cliente seleccionado por el usuario."""
+
+        return obtener_cliente_activo(self.request.user)
+
+    def dispatch(self, request, *args, **kwargs):
+        """Bloquea al usuario común que no tenga un cliente activo."""
+
+        if (
+            request.user.is_authenticated
+            and not self.historial_general
+            and self.cliente_activo is None
+        ):
+            messages.info(
+                request,
+                "Necesitás tener un cliente activo para consultar el historial.",
+            )
+            return redirect("home")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        """Devuelve todas las transacciones o solamente las del cliente activo."""
+
+        queryset = Transaccion.objects.select_related(
+            "cliente",
+            "moneda",
+            "tasa_cambio",
+            "destino_acreditacion",
+            "metodo_pago",
+            "creada_por",
+        )
+        if self.historial_general:
+            return queryset
+        return queryset.filter(cliente=self.cliente_activo)
+
+
+class TransaccionHistorialView(AccesoHistorialTransaccionMixin, ListView):
+    """Lista las transacciones autorizadas y permite filtrarlas sin modificarlas."""
+
+    model = Transaccion
+    template_name = "transacciones/historial.html"
+    context_object_name = "transacciones"
+    paginate_by = 20
+
+    def get_filtro(self):
+        """Construye y conserva el formulario utilizado por la consulta."""
+
+        if not hasattr(self, "_filtro"):
+            self._filtro = HistorialTransaccionFiltroForm(
+                self.request.GET or None,
+                mostrar_cliente=self.historial_general,
+            )
+        return self._filtro
+
+    def get_queryset(self):
+        """Aplica al alcance autorizado los filtros válidos recibidos por GET."""
+
+        queryset = super().get_queryset().order_by("-creada_en")
+        filtro = self.get_filtro()
+        if not filtro.is_valid():
+            return queryset
+
+        datos = filtro.cleaned_data
+        if self.historial_general and datos.get("cliente"):
+            queryset = queryset.filter(cliente=datos["cliente"])
+        if datos.get("fecha_desde"):
+            queryset = queryset.filter(creada_en__date__gte=datos["fecha_desde"])
+        if datos.get("fecha_hasta"):
+            queryset = queryset.filter(creada_en__date__lte=datos["fecha_hasta"])
+        if datos.get("tipo_operacion"):
+            queryset = queryset.filter(tipo_operacion=datos["tipo_operacion"])
+        if datos.get("estado"):
+            queryset = queryset.filter(estado=datos["estado"])
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        """Agrega el formulario, el alcance y los parámetros de paginación."""
+
+        context = super().get_context_data(**kwargs)
+        parametros = self.request.GET.copy()
+        parametros.pop("page", None)
+        context.update(
+            {
+                "active_menu": "historial_transacciones",
+                "filtro": self.get_filtro(),
+                "historial_general": self.historial_general,
+                "parametros_filtro": parametros.urlencode(),
+            }
+        )
+        return context
+
+
+class TransaccionWebDetailView(AccesoHistorialTransaccionMixin, DetailView):
+    """Muestra una transaccion si pertenece al alcance autorizado."""
     model = Transaccion
     template_name = "transacciones/transaccion_detail.html"
     context_object_name = "transaccion"
     pk_url_kwarg = "id_transaccion"
 
     def get_queryset(self):
-        """Restringe la consulta a las transacciones del cliente activo.
+        """Reutiliza el alcance seguro definido para el historial."""
 
-        Returns:
-            django.db.models.QuerySet: Transacciones pertenecientes al
-            cliente activo del usuario.
-        """
-        return Transaccion.objects.filter(
-            cliente=obtener_cliente_activo(self.request.user)
-        ).select_related(
-            "cliente", "moneda", "tasa_cambio", "destino_acreditacion", "metodo_pago"
-        )
+        return super().get_queryset()
 
     def get_context_data(self, **kwargs):
         """Marca el menú de operaciones como activo.
@@ -208,7 +308,7 @@ class TransaccionWebDetailView(ClienteActivoRequiredMixin, DetailView):
             dict: Contexto con el menú activo seleccionado.
         """
         context = super().get_context_data(**kwargs)
-        context["active_menu"] = "transacciones"
+        context["active_menu"] = "historial_transacciones"
         return context
 
 
