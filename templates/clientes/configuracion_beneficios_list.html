@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load formato_numeros %}
 
 {% block title %}Configuración del sistema | Global Exchange{% endblock %}
 
@@ -25,8 +26,8 @@
                     {% for configuracion in configuraciones %}
                     <tr>
                         <td>{{ configuracion.get_categoria_display }}</td>
-                        <td>{{ configuracion.porcentaje_beneficio }}%</td>
-                        <td>{{ configuracion.limite_mensual_pyg }}</td>
+                        <td>{{ configuracion.porcentaje_beneficio|formato_numero:2 }}%</td>
+                        <td>{{ configuracion.limite_mensual_pyg|formato_numero:2 }}</td>
                         <td>
                             <a
                                 href="{% url 'configuracion_beneficios_editar' configuracion.pk %}"
@@ -71,7 +72,7 @@
                 <tbody>
                     <tr>
                         <td>Compra de divisas</td>
-                        <td>{{ configuracion_comision.porcentaje_compra }}%</td>
+                        <td>{{ configuracion_comision.porcentaje_compra|formato_numero:2 }}%</td>
                         <td rowspan="2">
                             <a
                                 href="{% url 'configuracion-comisiones-editar' %}"
@@ -83,7 +84,7 @@
                     </tr>
                     <tr>
                         <td>Venta de divisas</td>
-                        <td>{{ configuracion_comision.porcentaje_venta }}%</td>
+                        <td>{{ configuracion_comision.porcentaje_venta|formato_numero:2 }}%</td>
                     </tr>
                 </tbody>
             </table>

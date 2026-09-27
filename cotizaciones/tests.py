@@ -68,8 +68,8 @@ class CotizacionWebViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("USD/PYG", content)
-        self.assertIn("Gs 7200", content)
-        self.assertIn("Gs 7350", content)
+        self.assertIn("Gs 7.200", content)
+        self.assertIn("Gs 7.350", content)
         self.assertNotIn("7200,0000", content)
         self.assertNotIn("7350,0000", content)
         self.assertNotIn(",0000", content)
@@ -235,7 +235,7 @@ class SimulacionConversionWebTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Total estimado a recibir", content)
         self.assertIn("PYG", content)
-        self.assertIn("720000", content)
+        self.assertIn("720.000", content)
         self.assertIn("Compra", content)
 
     def test_simulador_shows_error_without_current_rate(self):

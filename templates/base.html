@@ -9,6 +9,35 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@4.0.0-beta3/dist/css/adminlte.min.css">
 
     <style>
+
+        .app-sidebar {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .sidebar-brand {
+            flex: 0 0 auto;
+        }
+
+        .sidebar-wrapper {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type="number"] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
         .skip-link {
             position: absolute;
             top: -40px;

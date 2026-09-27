@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load formato_numeros %}
 
 {% block title %}{{ page_title }} | Global Exchange{% endblock %}
 
@@ -33,12 +34,12 @@
                     <tbody>
                         <tr>
                             <th style="width: 40%">Moneda a comprar</th>
-                            <td>{{ resumen.monto_divisa }} {{ resumen.moneda.codigo }}</td>
+                            <td>{{ resumen.monto_divisa|formato_numero:2 }} {{ resumen.moneda.codigo }}</td>
                         </tr>
                         <tr>
                             <th>Cotización aplicada</th>
                             <td>
-                                {{ resumen.tasa_aplicada }} PYG por {{ resumen.moneda.codigo }}
+                                {{ resumen.tasa_aplicada|formato_numero:4 }} PYG por {{ resumen.moneda.codigo }}
                                 <div class="form-text">
                                     Vigente desde {{ resumen.fecha_vigencia_tasa }}
                                 </div>
@@ -77,30 +78,30 @@
                     <tbody>
                         <tr>
                             <th style="width: 40%">Subtotal</th>
-                            <td>{{ resumen.subtotal_pyg }} PYG</td>
+                            <td>{{ resumen.subtotal_pyg|formato_numero:2 }} PYG</td>
                         </tr>
                         <tr>
                             <th>
                                 Beneficio {{ categoria_label }}
-                                ({{ resumen.beneficio_porcentaje }}%)
+                                ({{ resumen.beneficio_porcentaje|formato_numero:2 }}%)
                             </th>
                             <td>
-                                − {{ resumen.beneficio_monto_pyg }} PYG
+                                − {{ resumen.beneficio_monto_pyg|formato_numero:2 }} PYG
                                 {% if resumen.beneficio_monto_pyg > 0 %}
                                 <div class="form-text">
-                                    Aplicado sobre {{ resumen.monto_beneficiado_pyg }} PYG,
-                                    con un límite de {{ resumen.limite_beneficio_pyg }} PYG.
+                                    Aplicado sobre {{ resumen.monto_beneficiado_pyg|formato_numero:2 }} PYG,
+                                    con un límite de {{ resumen.limite_beneficio_pyg|formato_numero:2 }} PYG.
                                 </div>
                                 {% endif %}
                             </td>
                         </tr>
                         <tr>
-                            <th>Comisión de compra ({{ resumen.comision_porcentaje }}%)</th>
-                            <td>+ {{ resumen.comision_monto_pyg }} PYG</td>
+                            <th>Comisión de compra ({{ resumen.comision_porcentaje|formato_numero:2 }}%)</th>
+                            <td>+ {{ resumen.comision_monto_pyg|formato_numero:2 }} PYG</td>
                         </tr>
                         <tr class="table-active">
                             <th>Total a pagar</th>
-                            <td><strong>{{ resumen.total_pyg }} PYG</strong></td>
+                            <td><strong>{{ resumen.total_pyg|formato_numero:2 }} PYG</strong></td>
                         </tr>
                     </tbody>
                 </table>
