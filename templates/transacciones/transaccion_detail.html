@@ -11,21 +11,27 @@
         registrada
     </h1>
 
-    <div class="alert {% if transaccion.estado == 'COMPLETADA' %}alert-success{% elif transaccion.estado == 'CANCELADA' %}alert-danger{% elif transaccion.estado == 'ANULADA' %}alert-secondary{% else %}alert-warning{% endif %} mt-3">
+    <div
+        class="alert {% if transaccion.estado == 'COMPLETADA' %}alert-success{% elif transaccion.estado == 'CANCELADA' %}alert-danger{% elif transaccion.estado == 'ANULADA' %}alert-secondary{% else %}alert-warning{% endif %} mt-3">
         <strong>
             La operación {{ transaccion.id_transaccion }} está en estado
             {{ transaccion.get_estado_display|upper }}.
         </strong>
         {% if transaccion.estado == "PENDIENTE" %}
         <div class="mt-1">
+            {% if transaccion.tipo_operacion == "COMPRA" %}
             Todavía no fue abonada. Podés completar el pago más adelante desde
             tus operaciones pendientes.
+            {% else %}
+            Todavía no fue procesada. Podés completar la operación más adelante
+            desde tus operaciones pendientes.
+            {% endif %}
         </div>
         {% elif transaccion.estado == "CANCELADA" %}
         <div class="mt-1">
             La operación fue cancelada antes de confirmar el pago.
             {% if transaccion.motivo_cancelacion %}
-                Motivo: {{ transaccion.motivo_cancelacion }}
+            Motivo: {{ transaccion.motivo_cancelacion }}
             {% endif %}
         </div>
         {% endif %}
@@ -52,9 +58,9 @@
                         <tr>
                             <th>
                                 {% if transaccion.tipo_operacion == "COMPRA" %}
-                                    Monto a recibir
+                                Monto a recibir
                                 {% else %}
-                                    Monto entregado
+                                Monto entregado
                                 {% endif %}
                             </th>
                             <td>{{ transaccion.monto_divisa|formato_numero:2 }} {{ transaccion.moneda.codigo }}</td>
@@ -69,25 +75,27 @@
                                 </div>
                             </td>
                         </tr>
+                        {% if transaccion.tipo_operacion == "COMPRA" %}
                         <tr>
                             <th>Destino de acreditación</th>
                             <td>
                                 {% if transaccion.destino_acreditacion %}
-                                    {{ transaccion.destino_acreditacion.etiqueta }}
-                                    ({{ transaccion.destino_acreditacion.moneda_id }})
+                                {{ transaccion.destino_acreditacion.etiqueta }}
+                                ({{ transaccion.destino_acreditacion.moneda_id }})
                                 {% else %}
-                                    Sin definir
+                                Sin definir
                                 {% endif %}
                             </td>
                         </tr>
+                        {% endif %}
                         <tr>
                             <th>Método de pago</th>
                             <td>
                                 {% if transaccion.metodo_pago %}
-                                    {{ transaccion.metodo_pago.get_tipo_display }} ·
-                                    {{ transaccion.metodo_pago.identificacion }}
+                                {{ transaccion.metodo_pago.get_tipo_display }} ·
+                                {{ transaccion.metodo_pago.identificacion }}
                                 {% else %}
-                                    Sin definir
+                                Sin definir
                                 {% endif %}
                             </td>
                         </tr>
@@ -154,9 +162,9 @@
                         <tr class="table-active">
                             <th>
                                 {% if transaccion.tipo_operacion == "COMPRA" %}
-                                    Total a pagar
+                                Total a pagar
                                 {% else %}
-                                    Total a recibir
+                                Total a recibir
                                 {% endif %}
                             </th>
                             <td><strong>{{ transaccion.total_pyg|formato_numero:2 }} PYG</strong></td>
@@ -168,16 +176,25 @@
     </div>
 
     <div class="mt-4 d-flex flex-wrap gap-2">
-        {% if transaccion.tipo_operacion == "COMPRA" %}
-        <a
-            href="{% url 'transaccion-web-comprobante' transaccion.id_transaccion %}"
-            class="btn btn-primary"
-        >
+        <a href="{% url 'transaccion-web-comprobante' transaccion.id_transaccion %}" class="btn btn-primary">
             Descargar comprobante
         </a>
+
+        {% if transaccion.tipo_operacion == "COMPRA" %}
+            <a href="{% url 'compra-web-create' %}" class="btn btn-outline-primary">
+                Nueva compra
+            </a>
+        {% else %}
+            <a href="{% url 'venta-web-create' %}" class="btn btn-outline-primary">
+                Nueva venta
+            </a>
         {% endif %}
+
+        <a href="{% url 'home' %}" class="btn btn-secondary">
+            Volver al menú principal
+        </a>
         <a href="{% url 'transaccion-web-historial' %}" class="btn btn-secondary">
-            Volver al historial
+            Ir al historial
         </a>
     </div>
 </div>

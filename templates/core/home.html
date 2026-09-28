@@ -300,16 +300,41 @@
 
             {% if module.enabled %}
 
-            <a href="{{ module.href }}"
-               class="small-box-footer {{ module.link_class }}"
-               aria-label="{{ module.action_label }}">
+                {% if module.actions %}
 
-                <span>{{ module.action_label }}</span>
+                <div class="d-flex w-100">
 
-                <i class="bi bi-arrow-right-circle module-card-action-icon"
-                   aria-hidden="true"></i>
+                    {% for action in module.actions %}
 
-            </a>
+                    <a href="{{ action.href }}"
+                       class="small-box-footer flex-fill {{ module.link_class|default:'link-light' }} {% if not forloop.last %}border-end border-white border-opacity-25{% endif %}"
+                       aria-label="{{ action.label }}">
+
+                        <span>{{ action.label }}</span>
+
+                        <i class="bi bi-arrow-right-circle module-card-action-icon"
+                           aria-hidden="true"></i>
+
+                    </a>
+
+                    {% endfor %}
+
+                </div>
+
+                {% else %}
+
+                <a href="{{ module.href }}"
+                   class="small-box-footer {{ module.link_class }}"
+                   aria-label="{{ module.action_label }}">
+
+                    <span>{{ module.action_label }}</span>
+
+                    <i class="bi bi-arrow-right-circle module-card-action-icon"
+                       aria-hidden="true"></i>
+
+                </a>
+
+                {% endif %}
 
             {% else %}
 
