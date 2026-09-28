@@ -1,4 +1,6 @@
+from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -783,6 +785,43 @@ class VentaDivisaFormTests(TestCase):
             activo=True,
         )
 
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC)
+class HistorialTransaccionesWebTests(TestCase):
+    """Prueba los criterios de aceptación del historial de transacciones."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="usuario_historial",
+            password="testpass123",
+        )
+        self.client.force_login(self.user)
+        self.cliente_uno = Cliente.objects.create(
+            ruc="80000301-1",
+            nombre="Cliente Uno",
+            categoria=CategoriaCliente.VIP,
+            tipo=TipoCliente.FISICA,
+        )
+        self.cliente_dos = Cliente.objects.create(
+            ruc="80000302-2",
+            nombre="Cliente Dos",
+            categoria=CategoriaCliente.MINORISTA,
+            tipo=TipoCliente.FISICA,
+        )
+        self.perfil = UsuarioCliente.objects.create(
+            usuario=self.user,
+            cliente_activo=self.cliente_uno,
+        )
+        self.pyg = Moneda.objects.get(codigo="PYG")
+        self.usd = Moneda.objects.get(codigo="USD")
+        self.tasa = TasaCambio.objects.create(
+            moneda_origen=self.usd,
+            moneda_destino=self.pyg,
+            precio_compra=Decimal("7200.0000"),
+            precio_venta=Decimal("7350.0000"),
+            vigente=True,
+        )
+        
+
     def test_formulario_valido_con_datos_correctos(self):
         form = VentaDivisaForm(
             data={
@@ -804,3 +843,307 @@ class VentaDivisaFormTests(TestCase):
         )
         self.assertFalse(form.is_valid())
         self.assertIn("metodo_pago", form.errors)
+        self.compra = self._crear_transaccion(self.cliente_uno)
+        self.venta = self._crear_transaccion(
+            self.cliente_uno,
+            tipo=TipoOperacion.VENTA,
+            estado=EstadoTransaccion.COMPLETADA,
+        )
+        self.cancelada = self._crear_transaccion(
+            self.cliente_uno,
+            estado=EstadoTransaccion.CANCELADA,
+        )
+        self.ajena = self._crear_transaccion(self.cliente_dos)
+
+    def _crear_transaccion(
+        self,
+        cliente,
+        tipo=TipoOperacion.COMPRA,
+        estado=EstadoTransaccion.PENDIENTE,
+    ):
+        """Crea datos validos sin depender de los formularios de compra o venta."""
+
+        es_compra = tipo == TipoOperacion.COMPRA
+        subtotal = Decimal("735000.00") if es_compra else Decimal("720000.00")
+        comision = Decimal("7350.00") if es_compra else Decimal("7200.00")
+        total = subtotal + comision if es_compra else subtotal - comision
+        ahora = timezone.now()
+        transaccion = Transaccion(
+            cliente=cliente,
+            creada_por=self.user,
+            tipo_operacion=tipo,
+            moneda=self.usd,
+            tasa_cambio=self.tasa,
+            tasa_aplicada=(
+                self.tasa.precio_venta if es_compra else self.tasa.precio_compra
+            ),
+            fecha_vigencia_tasa=self.tasa.fecha_vigencia,
+            monto_divisa=Decimal("100.00"),
+            subtotal_pyg=subtotal,
+            categoria_aplicada=cliente.categoria,
+            beneficio_porcentaje=Decimal("0.00"),
+            limite_beneficio_pyg=Decimal("0.00"),
+            monto_beneficiado_pyg=Decimal("0.00"),
+            beneficio_monto_pyg=Decimal("0.00"),
+            comision_porcentaje=Decimal("1.00"),
+            comision_monto_pyg=comision,
+            total_pyg=total,
+            estado=estado,
+            cancelada_en=(
+                ahora if estado == EstadoTransaccion.CANCELADA else None
+            ),
+            etapa_cancelacion=(
+                EtapaCancelacion.PREVIA_PAGO
+                if estado == EstadoTransaccion.CANCELADA
+                else None
+            ),
+            motivo_cancelacion=(
+                "El cliente canceló antes del pago."
+                if estado == EstadoTransaccion.CANCELADA
+                else ""
+            ),
+            completada_en=(
+                ahora
+                if estado in (
+                    EstadoTransaccion.COMPLETADA,
+                    EstadoTransaccion.ANULADA,
+                )
+                else None
+            ),
+        )
+        transaccion.full_clean()
+        transaccion.save()
+        return transaccion
+
+    def _ids_visibles(self, response):
+        """Devuelve los identificadores incluidos en la pagina del historial."""
+
+        return {
+            transaccion.id_transaccion
+            for transaccion in response.context["transacciones"]
+        }
+
+    def _roles(self, *roles_permitidos):
+        """Simula los roles de Keycloak necesarios para cada prueba."""
+
+        return patch(
+            "transacciones.views.tiene_rol",
+            side_effect=lambda request, rol: rol in roles_permitidos,
+        )
+
+    def test_usuario_ve_solo_transacciones_del_cliente_activo(self):
+        # Un cliente no debe ver operaciones pertenecientes a otro cliente.
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertSetEqual(
+            self._ids_visibles(response),
+            {self.compra.pk, self.venta.pk, self.cancelada.pk},
+        )
+
+    def test_cambiar_cliente_activo_cambia_el_historial(self):
+        # El historial debe seguir al cliente que el usuario tenga seleccionado.
+        self.perfil.cliente_activo = self.cliente_dos
+        self.perfil.save(update_fields=["cliente_activo"])
+
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertSetEqual(self._ids_visibles(response), {self.ajena.pk})
+
+    def test_usuario_no_puede_forzar_otro_cliente_con_el_filtro(self):
+        # Cambiar la URL no debe saltar la restricción del cliente activo.
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            {"cliente": self.cliente_dos.pk},
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertNotIn(self.ajena.pk, self._ids_visibles(response))
+        self.assertIn(self.compra.pk, self._ids_visibles(response))
+
+    def test_usuario_sin_cliente_activo_no_accede_al_historial(self):
+        # Un usuario comun necesita seleccionar un cliente activo.
+        self.perfil.cliente_activo = None
+        self.perfil.save(update_fields=["cliente_activo"])
+
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertRedirects(response, reverse("home"))
+
+    def test_administrador_ve_el_historial_general_sin_cliente_activo(self):
+        # El administrador puede consultar operaciones de todos los clientes.
+        self.perfil.cliente_activo = None
+        self.perfil.save(update_fields=["cliente_activo"])
+
+        with self._roles("administrador"):
+            response = self.client.get(
+                reverse("transaccion-web-historial"),
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertSetEqual(
+            self._ids_visibles(response),
+            {self.compra.pk, self.venta.pk, self.cancelada.pk, self.ajena.pk},
+        )
+        self.assertTrue(response.context["historial_general"])
+
+    def test_analista_ve_el_historial_general(self):
+        # El analista cambiario tiene el mismo alcance de consulta general.
+        with self._roles("analista_cambiario"):
+            response = self.client.get(
+                reverse("transaccion-web-historial"),
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertIn(self.ajena.pk, self._ids_visibles(response))
+
+    def test_historial_muestra_los_datos_requeridos(self):
+        # La tabla debe mostrar todos los datos pedidos por la historia.
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        for encabezado in (
+            "ID",
+            "Fecha y hora",
+            "Cliente",
+            "Operación",
+            "Moneda",
+            "Monto",
+            "Tasa aplicada",
+            "Comisión",
+            "Total",
+            "Estado",
+        ):
+            self.assertContains(response, encabezado)
+        self.assertContains(response, str(self.compra.id_transaccion))
+        self.assertContains(response, "Cliente Uno")
+        self.assertContains(response, "Compra de divisas")
+        self.assertContains(response, "USD")
+        self.assertContains(response, "Pendiente")
+
+    def test_historial_incluye_ventas_y_canceladas(self):
+        # El listado debe aceptar tipos y estados aunque sus flujos lleguen despues.
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertContains(response, "Venta de divisas")
+        self.assertContains(response, "Cancelada")
+
+    def test_filtro_general_por_cliente(self):
+        # El filtro de cliente solo debe devolver operaciones de ese cliente.
+        with self._roles("administrador"):
+            response = self.client.get(
+                reverse("transaccion-web-historial"),
+                {"cliente": self.cliente_dos.pk},
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertSetEqual(self._ids_visibles(response), {self.ajena.pk})
+
+    def test_filtros_por_tipo_y_estado(self):
+        # Los filtros pueden combinarse para encontrar una operación concreta.
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            {
+                "tipo_operacion": TipoOperacion.VENTA,
+                "estado": EstadoTransaccion.COMPLETADA,
+            },
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertSetEqual(self._ids_visibles(response), {self.venta.pk})
+
+    def test_filtro_por_fecha(self):
+        # El rango de fechas debe excluir operaciones que queden fuera.
+        fecha_antigua = timezone.now() - timedelta(days=10)
+        Transaccion.objects.filter(pk=self.compra.pk).update(
+            creada_en=fecha_antigua
+        )
+
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            {"fecha_desde": timezone.localdate().isoformat()},
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertNotIn(self.compra.pk, self._ids_visibles(response))
+        self.assertIn(self.venta.pk, self._ids_visibles(response))
+
+    def test_cliente_puede_abrir_el_detalle_de_su_transaccion(self):
+        # Una fila propia lleva a un detalle visible y de solo consulta.
+        response = self.client.get(
+            reverse("transaccion-web-detail", args=[self.compra.pk]),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cliente Uno")
+        self.assertContains(response, "Volver al historial")
+
+    def test_cliente_no_puede_abrir_el_detalle_ajeno(self):
+        # Escribir una URL ajena manualmente debe responder que no existe.
+        response = self.client.get(
+            reverse("transaccion-web-detail", args=[self.ajena.pk]),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_administrador_puede_abrir_un_detalle_ajeno(self):
+        # El alcance general tambien debe aplicarse a la pantalla de detalle.
+        with self._roles("administrador"):
+            response = self.client.get(
+                reverse("transaccion-web-detail", args=[self.ajena.pk]),
+                HTTP_HOST="127.0.0.1",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cliente Dos")
+
+    def test_detalle_de_venta_usa_textos_de_venta(self):
+        # El detalle debe explicar correctamente una venta futura.
+        response = self.client.get(
+            reverse("transaccion-web-detail", args=[self.venta.pk]),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertContains(response, "Venta")
+        self.assertContains(response, "Monto entregado")
+        self.assertContains(response, "Comisión de venta")
+        self.assertContains(response, "Total a recibir")
+
+    def test_historial_no_ofrece_editar_ni_eliminar(self):
+        # La historia permite consultar, pero no cambiar ni borrar registros.
+        response = self.client.get(
+            reverse("transaccion-web-historial"),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertNotContains(response, ">Editar<")
+        self.assertNotContains(response, ">Eliminar<")
+
+    def test_historial_rechaza_solicitudes_post(self):
+        # Un POST no debe modificar datos desde la pantalla de historial.
+        cantidad_antes = Transaccion.objects.count()
+
+        response = self.client.post(
+            reverse("transaccion-web-historial"),
+            {"estado": EstadoTransaccion.CANCELADA},
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(Transaccion.objects.count(), cantidad_antes)
