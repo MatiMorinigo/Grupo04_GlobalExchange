@@ -6,6 +6,7 @@ from django.db.models import BigAutoField
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from .forms import VentaDivisaForm
 
 from clientes.models import (
     CategoriaCliente,
@@ -750,3 +751,56 @@ class CompraDivisaWebTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("metodo_pago", response.context["form"].errors)
         self.assertEqual(Transaccion.objects.count(), 0)
+
+
+class VentaDivisaFormTests(TestCase):
+    """Prueba las validaciones y el comportamiento de VentaDivisaForm."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.usuario = User.objects.create_user(username="operador_venta")
+        cls.cliente = Cliente.objects.create(
+            ruc="80012345-6",
+            nombre="Cliente Vendedor",
+            categoria=CategoriaCliente.VIP,
+            tipo=TipoCliente.FISICA,
+        )
+        cls.pyg = Moneda.objects.get(codigo="PYG")
+        cls.usd = Moneda.objects.get(codigo="USD")
+        cls.tasa_usd = TasaCambio.objects.create(
+            moneda_origen=cls.usd,
+            moneda_destino=cls.pyg,
+            precio_compra=Decimal("7200.0000"),
+            precio_venta=Decimal("7350.0000"),
+            vigente=True,
+        )
+        cls.metodo_pago = MetodoPago.objects.create(
+            cliente=cls.cliente,
+            tipo=TipoMetodoPago.TARJETA_CREDITO,
+            titular="Cliente Vendedor",
+            ultimos_cuatro_digitos="1234",
+            fecha_vencimiento="12/30",
+            activo=True,
+        )
+
+    def test_formulario_valido_con_datos_correctos(self):
+        form = VentaDivisaForm(
+            data={
+                "moneda": "USD",
+                "monto_divisa": "100.00",
+                "metodo_pago": self.metodo_pago.pk,
+            },
+            cliente=self.cliente,
+        )
+        self.assertTrue(form.is_valid())
+
+    def test_formulario_requiere_metodo_pago(self):
+        form = VentaDivisaForm(
+            data={
+                "moneda": "USD",
+                "monto_divisa": "100.00",
+            },
+            cliente=self.cliente,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("metodo_pago", form.errors)

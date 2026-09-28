@@ -53,6 +53,16 @@ class HomeViewTests(SimpleTestCase):
         self.assertIn("jperez", content)
         self.assertIn("Cerrar sesión", content)
 
+    def test_authenticated_user_sees_compra_and_venta_divisas_actions(self):
+        user = User(username="jperez")
+        response = self.render_home(user)
+        content = response.content.decode("utf-8")
+
+        self.assertIn(reverse("compra-web-create"), content)
+        self.assertIn(reverse("venta-web-create"), content)
+        self.assertIn("Comprar divisas", content)
+        self.assertIn("Vender divisas", content)
+
     def test_oidc_routes_used_by_navbar_exist(self):
         self.assertEqual(reverse("oidc_authentication_init"), "/oidc/authenticate/")
         self.assertEqual(reverse("oidc_logout"), "/oidc/logout/")
