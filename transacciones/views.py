@@ -5,13 +5,16 @@ from django.views.generic import DetailView, FormView
 from core.mixins import ClienteActivoRequiredMixin
 from usuarios.models import obtener_cliente_activo
 
-from .forms import CompraDivisaForm
+from .forms import CompraDivisaForm, VentaDivisaForm
 from .models import Transaccion
 from .services import (
     OperacionCambiariaError,
     calcular_compra,
+    calcular_venta,
     crear_transaccion_compra,
+    crear_transaccion_venta,
     obtener_tasa_vigente_compra,
+    obtener_tasa_vigente_venta,
 )
 
 
@@ -178,6 +181,170 @@ class CompraDivisaWebCreateView(ClienteActivoRequiredMixin, FormView):
         return redirect("transaccion-web-detail", id_transaccion=transaccion.id_transaccion)
 
 
+
+class VentaDivisaWebCreateView(ClienteActivoRequiredMixin, FormView):
+    """Guía la venta de divisas desde los datos de la operación hasta su registro.
+
+    El cliente entrega moneda extranjera y recibe guaraníes. El formulario se
+    resuelve en dos pasos sobre una única vista y una única URL, siguiendo el
+    mismo patrón que la compra de divisas: el primer envío calcula y muestra el
+    resumen, y el segundo, marcado con el campo oculto ``confirmado``, registra
+    la transacción.
+
+    La operación se persiste recién al confirmar. Antes de hacerlo se verifica
+    que la cotización utilizada para armar el resumen siga vigente; si cambió,
+    se vuelve a mostrar el resumen recalculado con una advertencia, sin haber
+    tocado la base de datos.
+    """
+
+    template_name = "transacciones/venta_form.html"
+    form_class = VentaDivisaForm
+
+    def get_form_kwargs(self):
+        """Entrega al formulario el cliente activo del usuario.
+
+        Returns:
+            dict: Argumentos de construcción del formulario.
+        """
+        kwargs = super().get_form_kwargs()
+        kwargs["cliente"] = obtener_cliente_activo(self.request.user)
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        """Prepara los textos y el menú de la pantalla de venta.
+
+        Args:
+            **kwargs: Datos adicionales del contexto de la vista base.
+
+        Returns:
+            dict: Contexto con el menú activo, el título y, salvo que se
+            indique lo contrario, el modo de edición del formulario.
+        """
+        context = super().get_context_data(**kwargs)
+        context.setdefault("modo_confirmacion", False)
+        context.setdefault("advertencia_cotizacion", False)
+        context.update(
+            {
+                "active_menu": "venta",
+                "page_title": "Vender divisas",
+                "cliente_operando": obtener_cliente_activo(self.request.user),
+            }
+        )
+        return context
+
+    def form_valid(self, form):
+        """Muestra el resumen o registra la operación, según el paso del flujo.
+
+        Args:
+            form (VentaDivisaForm): Formulario validado con los datos de la
+                operación y el estado del paso de confirmación.
+
+        Returns:
+            django.http.HttpResponse: El resumen a confirmar, el resumen
+            recalculado con una advertencia, o la redirección a la operación
+            registrada.
+        """
+        cliente = obtener_cliente_activo(self.request.user)
+        moneda = form.cleaned_data["moneda"]
+        monto = form.cleaned_data["monto_divisa"]
+
+        try:
+            tasa_vigente = obtener_tasa_vigente_venta(moneda.codigo)
+        except OperacionCambiariaError as error:
+            form.add_error(None, str(error))
+            return self.form_invalid(form)
+
+        confirmado = form.cleaned_data.get("confirmado")
+        id_tasa_vista = form.cleaned_data.get("id_tasa_vista")
+        cotizacion_cambio = confirmado and id_tasa_vista != tasa_vigente.id_tasa
+
+        if confirmado and not cotizacion_cambio:
+            return self._registrar(form, cliente, moneda, monto, tasa_vigente)
+
+        return self._mostrar_resumen(
+            form,
+            cliente,
+            moneda,
+            monto,
+            tasa_vigente,
+            advertencia=bool(cotizacion_cambio),
+        )
+
+    def _mostrar_resumen(self, form, cliente, moneda, monto, tasa, advertencia):
+        """Calcula los importes y renderiza el resumen pendiente de confirmación.
+
+        Args:
+            form (VentaDivisaForm): Formulario ya validado.
+            cliente (clientes.models.Cliente): Cliente que opera.
+            moneda (cotizaciones.models.Moneda): Divisa a vender.
+            monto (decimal.Decimal): Cantidad de divisa.
+            tasa (cotizaciones.models.TasaCambio): Cotización vigente.
+            advertencia (bool): True si la cotización cambió mientras el
+                cliente revisaba el resumen anterior.
+
+        Returns:
+            django.http.HttpResponse: Página del resumen, o el formulario con
+            errores si los importes no pudieron calcularse.
+        """
+        try:
+            resumen = calcular_venta(cliente, moneda.codigo, monto, tasa=tasa)
+        except OperacionCambiariaError as error:
+            form.add_error(None, str(error))
+            return self.form_invalid(form)
+
+        if advertencia:
+            messages.warning(
+                self.request,
+                "La cotización cambió mientras revisabas la operación. "
+                "Revisá los importes actualizados antes de confirmar.",
+            )
+
+        return self.render_to_response(
+            self.get_context_data(
+                form=form,
+                modo_confirmacion=True,
+                advertencia_cotizacion=advertencia,
+                resumen=resumen,
+                categoria_label=cliente.get_categoria_display(),
+                tasa_vigente=tasa,
+                metodo_pago=form.cleaned_data.get("metodo_pago"),
+            )
+        )
+
+    def _registrar(self, form, cliente, moneda, monto, tasa):
+        """Registra la transacción pendiente y redirige a su resumen.
+
+        Args:
+            form (VentaDivisaForm): Formulario ya validado.
+            cliente (clientes.models.Cliente): Cliente que opera.
+            moneda (cotizaciones.models.Moneda): Divisa a vender.
+            monto (decimal.Decimal): Cantidad de divisa.
+            tasa (cotizaciones.models.TasaCambio): Cotización confirmada.
+
+        Returns:
+            django.http.HttpResponse: Redirección a la operación registrada,
+            o el formulario con errores si no pudo crearse.
+        """
+        try:
+            transaccion = crear_transaccion_venta(
+                cliente=cliente,
+                usuario=self.request.user,
+                moneda_codigo=moneda.codigo,
+                monto_divisa=monto,
+                metodo_pago=form.cleaned_data.get("metodo_pago"),
+                tasa=tasa,
+            )
+        except OperacionCambiariaError as error:
+            form.add_error(None, str(error))
+            return self.form_invalid(form)
+
+        messages.success(
+            self.request,
+            f"Venta registrada con el número {transaccion.id_transaccion}.",
+        )
+        return redirect("transaccion-web-detail", id_transaccion=transaccion.id_transaccion)
+
+
 class TransaccionWebDetailView(ClienteActivoRequiredMixin, DetailView):
     """Muestra el resumen de una operación ya registrada por el cliente activo."""
     model = Transaccion
@@ -199,16 +366,22 @@ class TransaccionWebDetailView(ClienteActivoRequiredMixin, DetailView):
         )
 
     def get_context_data(self, **kwargs):
-        """Marca el menú de operaciones como activo.
+        """Marca el menú de operaciones como activo según el tipo de la transacción.
 
         Args:
             **kwargs: Datos adicionales del contexto de la vista base.
 
         Returns:
-            dict: Contexto con el menú activo seleccionado.
+            dict: Contexto con el menú activo seleccionado según el tipo de
+            operación: 'transacciones' para compras y 'venta' para ventas.
         """
         context = super().get_context_data(**kwargs)
-        context["active_menu"] = "transacciones"
+        transaccion = context["transaccion"]
+        context["active_menu"] = (
+            "venta"
+            if transaccion.tipo_operacion == "VENTA"
+            else "transacciones"
+        )
         return context
 
 

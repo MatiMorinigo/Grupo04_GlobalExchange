@@ -12,6 +12,7 @@ from cotizaciones.services import (
 from .models import TipoOperacion, Transaccion
 
 
+
 PYG = "PYG"
 CIEN = Decimal("100")
 
@@ -184,6 +185,155 @@ def crear_transaccion_compra(
             cliente=cliente,
             creada_por=usuario,
             destino_acreditacion=destino,
+            metodo_pago=metodo_pago,
+            **calculo,
+        )
+        transaccion.full_clean()
+        transaccion.save()
+
+    return transaccion
+
+
+def obtener_tasa_vigente_venta(moneda_codigo):
+    """Obtiene la tasa vigente del par entre una divisa y el guaraní para venta.
+
+    Reutiliza la misma búsqueda que la compra: el par siempre es divisa→PYG.
+    La distinción entre compra y venta se establece al seleccionar el precio
+    (compra usa ``precio_venta``, venta usa ``precio_compra``).
+
+    Args:
+        moneda_codigo (str): Código de la moneda extranjera de la operación.
+
+    Returns:
+        cotizaciones.models.TasaCambio: Tasa vigente del par divisa/PYG.
+
+    Raises:
+        OperacionCambiariaError: Si la moneda es el guaraní o si no existe
+            una tasa vigente para el par requerido.
+    """
+    return obtener_tasa_vigente_compra(moneda_codigo)
+
+
+def calcular_venta(cliente, moneda_codigo, monto_divisa, tasa=None):
+    """Calcula los importes de una venta de divisas para un cliente.
+
+    El cliente entrega la moneda extranjera indicada y recibe guaraníes, por
+    lo que se aplica el precio de compra de la cotización vigente. Sobre el
+    subtotal se suma el beneficio correspondiente a la categoría del cliente,
+    acotado por su límite configurado, y se descuenta la comisión de venta
+    vigente en el sistema.
+
+    Args:
+        cliente (clientes.models.Cliente): Cliente que realiza la operación.
+        moneda_codigo (str): Código de la moneda extranjera a vender.
+        monto_divisa (decimal.Decimal or str or int): Cantidad de divisa que
+            el cliente desea entregar.
+        tasa (cotizaciones.models.TasaCambio or None): Tasa a utilizar. Si
+            se omite, se busca la vigente para el par.
+
+    Returns:
+        dict: Importes y condiciones de la operación, con las claves que
+        necesita el modelo Transaccion para registrarse.
+
+    Raises:
+        OperacionCambiariaError: Si el monto no es positivo, si no hay una
+            cotización vigente o si la categoría del cliente no tiene
+            configuración de beneficios.
+    """
+    monto = Decimal(str(monto_divisa))
+
+    if monto <= 0:
+        raise OperacionCambiariaError("El monto de la operación debe ser mayor a cero.")
+
+    if tasa is None:
+        tasa = obtener_tasa_vigente_venta(moneda_codigo)
+
+    # En venta el cliente entrega divisas y recibe PYG: se aplica precio_compra.
+    tasa_aplicada = tasa.precio_compra
+    subtotal_pyg = redondear_monto(monto * tasa_aplicada)
+
+    try:
+        configuracion = obtener_beneficio_categoria(cliente.categoria)
+    except SimulacionConversionError as error:
+        raise OperacionCambiariaError(str(error)) from error
+
+    beneficio_porcentaje = Decimal("0.00")
+    limite_beneficio_pyg = Decimal("0.00")
+
+    if configuracion:
+        beneficio_porcentaje = configuracion.porcentaje_beneficio
+        limite_beneficio_pyg = configuracion.limite_mensual_pyg
+
+    # Un límite en cero desactiva el beneficio, igual que en compra.
+    if beneficio_porcentaje == 0 or limite_beneficio_pyg == 0:
+        monto_beneficiado_pyg = Decimal("0.00")
+        beneficio_monto_pyg = Decimal("0.00")
+    else:
+        monto_beneficiado_pyg = min(subtotal_pyg, limite_beneficio_pyg)
+        beneficio_monto_pyg = redondear_monto(
+            monto_beneficiado_pyg * beneficio_porcentaje / CIEN
+        )
+
+    # En venta: la comisión se descuenta de lo que recibe el cliente.
+    comision_porcentaje = ConfiguracionComision.obtener().porcentaje_venta
+    comision_monto_pyg = redondear_monto(subtotal_pyg * comision_porcentaje / CIEN)
+
+    # Cliente recibe: subtotal + beneficio - comision
+    total_pyg = redondear_monto(subtotal_pyg + beneficio_monto_pyg - comision_monto_pyg)
+
+    return {
+        "tipo_operacion": TipoOperacion.VENTA,
+        "moneda": tasa.moneda_origen,
+        "tasa_cambio": tasa,
+        "tasa_aplicada": tasa_aplicada,
+        "fecha_vigencia_tasa": tasa.fecha_vigencia,
+        "monto_divisa": redondear_monto(monto),
+        "subtotal_pyg": subtotal_pyg,
+        "categoria_aplicada": cliente.categoria,
+        "beneficio_porcentaje": beneficio_porcentaje,
+        "limite_beneficio_pyg": redondear_monto(limite_beneficio_pyg),
+        "monto_beneficiado_pyg": redondear_monto(monto_beneficiado_pyg),
+        "beneficio_monto_pyg": beneficio_monto_pyg,
+        "comision_porcentaje": comision_porcentaje,
+        "comision_monto_pyg": comision_monto_pyg,
+        "total_pyg": total_pyg,
+    }
+
+
+def crear_transaccion_venta(
+    cliente,
+    usuario,
+    moneda_codigo,
+    monto_divisa,
+    metodo_pago=None,
+    tasa=None,
+):
+    """Registra una venta de divisas en estado pendiente.
+
+    Args:
+        cliente (clientes.models.Cliente): Cliente que realiza la operación.
+        usuario (django.contrib.auth.models.User): Usuario que la registra.
+        moneda_codigo (str): Código de la moneda extranjera a vender.
+        monto_divisa (decimal.Decimal): Cantidad de divisa que el cliente entrega.
+        metodo_pago (pagos.models.MetodoPago or None): Medio con el que el
+            cliente realizará la operación.
+        tasa (cotizaciones.models.TasaCambio or None): Cotización a aplicar.
+            Si se omite, se toma la vigente para el par.
+
+    Returns:
+        Transaccion: Transacción creada en estado pendiente.
+
+    Raises:
+        OperacionCambiariaError: Si los datos de la operación no permiten
+            calcularla.
+        django.core.exceptions.ValidationError: Si la transacción resultante
+            no supera las validaciones del modelo.
+    """
+    with db_transaction.atomic():
+        calculo = calcular_venta(cliente, moneda_codigo, monto_divisa, tasa=tasa)
+        transaccion = Transaccion(
+            cliente=cliente,
+            creada_por=usuario,
             metodo_pago=metodo_pago,
             **calculo,
         )
