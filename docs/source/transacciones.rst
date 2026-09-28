@@ -32,3 +32,19 @@ Formularios
    :members:
    :undoc-members:
    :show-inheritance:
+
+Rutas Web
+---------
+
+.. automodule:: transacciones.web_urls
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Administración
+--------------
+
+.. automodule:: transacciones.admin
+   :members:
+   :undoc-members:
+   :show-inheritance:
