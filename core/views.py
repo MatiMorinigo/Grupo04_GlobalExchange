@@ -41,14 +41,23 @@ def home(request):
         },
         {
             "title": "Operaciones de cambio",
-            "description": "Compra de divisas.",
+            "description": "Compra y venta de divisas.",
             "icon": "bi bi-arrow-left-right",
             "bg_class": "text-bg-success",
-            "href": reverse("compra-web-create") if autenticado else "",
-            "link_class": "link-light",
             "status": "Disponible" if autenticado else "Requiere sesión",
             "status_class": "text-bg-success" if autenticado else "text-bg-secondary",
             "enabled": autenticado,
+            "actions": [
+                {
+                    "label": "Comprar divisas",
+                    "href": reverse("compra-web-create") if autenticado else "",
+                },
+                {
+                    "label": "Vender divisas",
+                    "href": reverse("venta-web-create") if autenticado else "",
+                },
+            ],
+            "href": reverse("compra-web-create") if autenticado else "",
             "action_label": "Comprar divisas" if autenticado else "Iniciá sesión",
             "disabled_reason": "" if autenticado else "Iniciá sesión para operar.",
         },

@@ -6,7 +6,13 @@
 {% block content %}
 <div class="container mt-4">
 
-    <h1>Compra registrada</h1>
+    <h1>
+        {% if transaccion.tipo_operacion == "COMPRA" %}
+            Compra registrada
+        {% else %}
+            Venta registrada
+        {% endif %}
+    </h1>
 
     <div class="alert alert-warning mt-3">
         <strong>
@@ -14,8 +20,13 @@
             {{ transaccion.get_estado_display|upper }}.
         </strong>
         <div class="mt-1">
-            Todavía no fue abonada. Podés completar el pago más adelante desde
-            tus operaciones pendientes.
+            {% if transaccion.tipo_operacion == "COMPRA" %}
+                Todavía no fue abonada. Podés completar el pago más adelante desde
+                tus operaciones pendientes.
+            {% else %}
+                Todavía no fue procesada. Podés completar la operación más adelante
+                desde tus operaciones pendientes.
+            {% endif %}
         </div>
     </div>
 
@@ -38,7 +49,13 @@
                             <td>{{ transaccion.get_tipo_operacion_display }}</td>
                         </tr>
                         <tr>
-                            <th>Monto a recibir</th>
+                            <th>
+                                {% if transaccion.tipo_operacion == "COMPRA" %}
+                                    Monto a recibir
+                                {% else %}
+                                    Monto a entregar
+                                {% endif %}
+                            </th>
                             <td>{{ transaccion.monto_divisa|formato_numero:2 }} {{ transaccion.moneda.codigo }}</td>
                         </tr>
                         <tr>
@@ -51,6 +68,7 @@
                                 </div>
                             </td>
                         </tr>
+                        {% if transaccion.tipo_operacion == "COMPRA" %}
                         <tr>
                             <th>Destino de acreditación</th>
                             <td>
@@ -62,6 +80,7 @@
                                 {% endif %}
                             </td>
                         </tr>
+                        {% endif %}
                         <tr>
                             <th>Método de pago</th>
                             <td>
@@ -101,7 +120,11 @@
                                 ({{ transaccion.beneficio_porcentaje|formato_numero:2 }}%)
                             </th>
                             <td>
-                                − {{ transaccion.beneficio_monto_pyg|formato_numero:2 }} PYG
+                                {% if transaccion.tipo_operacion == "COMPRA" %}
+                                    − {{ transaccion.beneficio_monto_pyg|formato_numero:2 }} PYG
+                                {% else %}
+                                    + {{ transaccion.beneficio_monto_pyg|formato_numero:2 }} PYG
+                                {% endif %}
                                 {% if transaccion.beneficio_monto_pyg > 0 %}
                                 <div class="form-text">
                                     Aplicado sobre {{ transaccion.monto_beneficiado_pyg|formato_numero:2 }} PYG,
@@ -111,11 +134,30 @@
                             </td>
                         </tr>
                         <tr>
-                            <th>Comisión de compra ({{ transaccion.comision_porcentaje|formato_numero:2 }}%)</th>
-                            <td>+ {{ transaccion.comision_monto_pyg|formato_numero:2 }} PYG</td>
+                            <th>
+                                {% if transaccion.tipo_operacion == "COMPRA" %}
+                                    Comisión de compra
+                                {% else %}
+                                    Comisión de venta
+                                {% endif %}
+                                ({{ transaccion.comision_porcentaje|formato_numero:2 }}%)
+                            </th>
+                            <td>
+                                {% if transaccion.tipo_operacion == "COMPRA" %}
+                                    + {{ transaccion.comision_monto_pyg|formato_numero:2 }} PYG
+                                {% else %}
+                                    − {{ transaccion.comision_monto_pyg|formato_numero:2 }} PYG
+                                {% endif %}
+                            </td>
                         </tr>
                         <tr class="table-active">
-                            <th>Total a pagar</th>
+                            <th>
+                                {% if transaccion.tipo_operacion == "COMPRA" %}
+                                    Total a pagar
+                                {% else %}
+                                    Total a recibir
+                                {% endif %}
+                            </th>
                             <td><strong>{{ transaccion.total_pyg|formato_numero:2 }} PYG</strong></td>
                         </tr>
                     </tbody>
@@ -131,6 +173,15 @@
         >
             Descargar comprobante
         </a>
+        {% if transaccion.tipo_operacion == "COMPRA" %}
+        <a href="{% url 'compra-web-create' %}" class="btn btn-outline-primary">
+            Nueva compra
+        </a>
+        {% else %}
+        <a href="{% url 'venta-web-create' %}" class="btn btn-outline-primary">
+            Nueva venta
+        </a>
+        {% endif %}
         <a href="{% url 'home' %}" class="btn btn-secondary">
             Volver al menú principal
         </a>
