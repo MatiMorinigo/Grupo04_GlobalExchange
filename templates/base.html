@@ -297,6 +297,19 @@
                         </a>
 
                     </li>
+
+                    <li class="nav-item">
+
+                        <a href="{% url 'venta-web-create' %}"
+                           class="nav-link {% if active_menu == 'venta' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-arrow-left-right"></i>
+
+                            <p>Vender divisas</p>
+
+                        </a>
+
+                    </li>
                     {% else %}
                     <li class="nav-item">
 
@@ -310,6 +323,21 @@
                             <p>Operaciones de cambio</p>
 
                         </span>
+
+                    </li>
+                    {% endif %}
+
+                    {% if request.user.is_authenticated %}
+                    <li class="nav-item">
+
+                        <a href="{% url 'transaccion-web-historial' %}"
+                           class="nav-link {% if active_menu == 'historial_transacciones' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-clock-history"></i>
+
+                            <p>Historial de transacciones</p>
+
+                        </a>
 
                     </li>
                     {% endif %}

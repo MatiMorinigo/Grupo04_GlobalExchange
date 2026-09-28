@@ -1,8 +1,11 @@
 from django import forms
 
+from clientes.models import Cliente
 from cotizaciones.models import Moneda
 from destinos.models import DestinoAcreditacion
 from pagos.models import MetodoPago
+
+from .models import EstadoTransaccion, TipoOperacion
 
 
 class MetodoPagoChoiceField(forms.ModelChoiceField):
@@ -150,6 +153,147 @@ class CompraDivisaForm(forms.Form):
                 "destino_acreditacion",
                 f"El destino seleccionado recibe {destino.moneda_id} "
                 f"y la operación es en {moneda.codigo}.",
+            )
+
+        return cleaned_data
+
+
+class VentaDivisaForm(forms.Form):
+    """Recoge los datos de una venta de divisas y su paso de confirmación.
+
+    El cliente entrega moneda extranjera y recibe guaraníes. Solo ofrece
+    monedas habilitadas con cotización vigente y métodos de pago activos del
+    cliente que opera.
+
+    Los campos ocultos ``confirmado`` e ``id_tasa_vista`` sostienen el paso de
+    confirmación sin recurrir a la sesión: el primero distingue el envío que
+    solo pide el resumen del que registra la operación, y el segundo permite
+    detectar si la cotización cambió mientras el cliente revisaba el resumen.
+    """
+
+    moneda = forms.ModelChoiceField(
+        label="Moneda a vender",
+        queryset=Moneda.objects.none(),
+        to_field_name="codigo",
+        empty_label="Seleccioná una moneda",
+        widget=forms.Select(attrs={"class": "form-select"}),
+        error_messages={
+            "required": "Seleccioná la moneda que querés vender.",
+            "invalid_choice": "Seleccioná una moneda con cotización vigente.",
+        },
+    )
+    monto_divisa = forms.DecimalField(
+        label="Monto a vender",
+        min_value=0.01,
+        max_digits=18,
+        decimal_places=2,
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-control",
+                "step": "0.01",
+                "min": "0.01",
+                "placeholder": "Ej.: 100.00",
+                "autocomplete": "off",
+            }
+        ),
+        error_messages={
+            "required": "Ingresá el monto de la operación.",
+            "min_value": "El monto debe ser mayor a cero.",
+            "invalid": "Ingresá un monto válido.",
+        },
+    )
+    metodo_pago = MetodoPagoChoiceField(
+        label="Método de pago",
+        queryset=MetodoPago.objects.none(),
+        empty_label="Seleccioná un método de pago",
+        widget=forms.Select(attrs={"class": "form-select"}),
+        error_messages={
+            "required": "Seleccioná con qué método vas a realizar la operación.",
+            "invalid_choice": "Seleccioná un método de pago propio y activo.",
+        },
+    )
+    confirmado = forms.BooleanField(required=False, widget=forms.HiddenInput())
+    id_tasa_vista = forms.IntegerField(required=False, widget=forms.HiddenInput())
+
+    def __init__(self, *args, cliente=None, **kwargs):
+        """Acota las opciones del formulario al cliente que realiza la operación.
+
+        Args:
+            *args: Argumentos posicionales del formulario base de Django.
+            cliente (clientes.models.Cliente or None): Cliente activo cuyos
+                métodos de pago pueden seleccionarse.
+            **kwargs: Opciones del formulario base, como los datos enviados.
+        """
+        super().__init__(*args, **kwargs)
+        self.cliente = cliente
+
+        self.fields["moneda"].queryset = (
+            Moneda.objects.filter(
+                activa=True,
+                tasas_origen__vigente=True,
+                tasas_origen__moneda_destino_id="PYG",
+            )
+            .exclude(codigo="PYG")
+            .distinct()
+            .order_by("codigo")
+        )
+
+        if cliente:
+            self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(
+                cliente=cliente, activo=True
+            ).order_by("-creado_en")
+class HistorialTransaccionFiltroForm(forms.Form):
+    """Recoge los filtros opcionales del historial de transacciones."""
+
+    cliente = forms.ModelChoiceField(
+        label="Cliente",
+        queryset=Cliente.objects.none(),
+        required=False,
+        empty_label="Todos los clientes",
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    fecha_desde = forms.DateField(
+        label="Desde",
+        required=False,
+        widget=forms.DateInput(attrs={"class": "form-control", "type": "date"}),
+    )
+    fecha_hasta = forms.DateField(
+        label="Hasta",
+        required=False,
+        widget=forms.DateInput(attrs={"class": "form-control", "type": "date"}),
+    )
+    tipo_operacion = forms.ChoiceField(
+        label="Tipo de operación",
+        required=False,
+        choices=[("", "Todas las operaciones"), *TipoOperacion.choices],
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    estado = forms.ChoiceField(
+        label="Estado",
+        required=False,
+        choices=[("", "Todos los estados"), *EstadoTransaccion.choices],
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+
+    def __init__(self, *args, mostrar_cliente=False, **kwargs):
+        """Muestra el selector de cliente solo en el historial general."""
+
+        super().__init__(*args, **kwargs)
+        if mostrar_cliente:
+            self.fields["cliente"].queryset = Cliente.objects.order_by("nombre")
+        else:
+            self.fields.pop("cliente")
+
+    def clean(self):
+        """Comprueba que el rango de fechas tenga un orden válido."""
+
+        cleaned_data = super().clean()
+        fecha_desde = cleaned_data.get("fecha_desde")
+        fecha_hasta = cleaned_data.get("fecha_hasta")
+
+        if fecha_desde and fecha_hasta and fecha_desde > fecha_hasta:
+            raise forms.ValidationError(
+                "La fecha inicial no puede ser posterior a la fecha final."
             )
 
         return cleaned_data
