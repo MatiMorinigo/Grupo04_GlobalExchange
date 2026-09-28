@@ -785,6 +785,29 @@ class VentaDivisaFormTests(TestCase):
             activo=True,
         )
 
+    def test_formulario_valido_con_datos_correctos(self):
+        form = VentaDivisaForm(
+            data={
+                "moneda": "USD",
+                "monto_divisa": "100.00",
+                "metodo_pago": self.metodo_pago.pk,
+            },
+            cliente=self.cliente,
+        )
+        self.assertTrue(form.is_valid())
+
+    def test_formulario_requiere_metodo_pago(self):
+        form = VentaDivisaForm(
+            data={
+                "moneda": "USD",
+                "monto_divisa": "100.00",
+            },
+            cliente=self.cliente,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("metodo_pago", form.errors)
+
+
 @override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC)
 class HistorialTransaccionesWebTests(TestCase):
     """Prueba los criterios de aceptación del historial de transacciones."""
@@ -820,29 +843,6 @@ class HistorialTransaccionesWebTests(TestCase):
             precio_venta=Decimal("7350.0000"),
             vigente=True,
         )
-        
-
-    def test_formulario_valido_con_datos_correctos(self):
-        form = VentaDivisaForm(
-            data={
-                "moneda": "USD",
-                "monto_divisa": "100.00",
-                "metodo_pago": self.metodo_pago.pk,
-            },
-            cliente=self.cliente,
-        )
-        self.assertTrue(form.is_valid())
-
-    def test_formulario_requiere_metodo_pago(self):
-        form = VentaDivisaForm(
-            data={
-                "moneda": "USD",
-                "monto_divisa": "100.00",
-            },
-            cliente=self.cliente,
-        )
-        self.assertFalse(form.is_valid())
-        self.assertIn("metodo_pago", form.errors)
         self.compra = self._crear_transaccion(self.cliente_uno)
         self.venta = self._crear_transaccion(
             self.cliente_uno,
@@ -1091,7 +1091,7 @@ class HistorialTransaccionesWebTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Cliente Uno")
-        self.assertContains(response, "Volver al historial")
+        self.assertContains(response, "Ir al historial")
 
     def test_cliente_no_puede_abrir_el_detalle_ajeno(self):
         # Escribir una URL ajena manualmente debe responder que no existe.
