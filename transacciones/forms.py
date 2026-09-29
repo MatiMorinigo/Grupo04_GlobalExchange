@@ -162,8 +162,9 @@ class VentaDivisaForm(forms.Form):
     """Recoge los datos de una venta de divisas y su paso de confirmación.
 
     El cliente entrega moneda extranjera y recibe guaraníes. Solo ofrece
-    monedas habilitadas con cotización vigente y métodos de pago activos del
-    cliente que opera.
+    monedas habilitadas con cotización vigente, destinos de acreditación y
+    métodos de pago activos del cliente que opera. La compatibilidad entre el
+    destino elegido y la moneda se verifica al limpiar el formulario.
 
     Los campos ocultos ``confirmado`` e ``id_tasa_vista`` sostienen el paso de
     confirmación sin recurrir a la sesión: el primero distingue el envío que
@@ -202,6 +203,16 @@ class VentaDivisaForm(forms.Form):
             "invalid": "Ingresá un monto válido.",
         },
     )
+    destino_acreditacion = DestinoAcreditacionChoiceField(
+        label="Destino de acreditación",
+        queryset=DestinoAcreditacion.objects.none(),
+        required=False,
+        empty_label="Elegirlo más adelante",
+        widget=forms.Select(attrs={"class": "form-select"}),
+        error_messages={
+            "invalid_choice": "Seleccioná un destino de acreditación propio y activo.",
+        },
+    )
     metodo_pago = MetodoPagoChoiceField(
         label="Método de pago",
         queryset=MetodoPago.objects.none(),
@@ -221,7 +232,7 @@ class VentaDivisaForm(forms.Form):
         Args:
             *args: Argumentos posicionales del formulario base de Django.
             cliente (clientes.models.Cliente or None): Cliente activo cuyos
-                métodos de pago pueden seleccionarse.
+                destinos de acreditación y métodos de pago pueden seleccionarse.
             **kwargs: Opciones del formulario base, como los datos enviados.
         """
         super().__init__(*args, **kwargs)
@@ -239,9 +250,39 @@ class VentaDivisaForm(forms.Form):
         )
 
         if cliente:
+            self.fields["destino_acreditacion"].queryset = (
+                DestinoAcreditacion.objects.filter(cliente=cliente, activo=True)
+                .select_related("moneda")
+                .order_by("moneda_id", "-creado_en")
+            )
             self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(
                 cliente=cliente, activo=True
             ).order_by("-creado_en")
+
+    def clean(self):
+        """Comprueba que el destino de acreditación sea en guaraníes.
+
+        En una venta de divisas la casa de cambio compra moneda extranjera y
+        paga al cliente en guaraníes (PYG). Por lo tanto, el destino de
+        acreditación elegido debe estar denominado en PYG.
+
+        Returns:
+            dict: Datos limpiados del formulario.
+        """
+        cleaned_data = super().clean()
+        destino = cleaned_data.get("destino_acreditacion")
+
+        if destino and destino.moneda_id != "PYG":
+            self.add_error(
+                "destino_acreditacion",
+                f"En una venta de divisas recibís guaraníes (PYG). "
+                f"El destino seleccionado está en {destino.moneda_id}; "
+                f"elegí un destino en PYG o dejá el campo vacío.",
+            )
+
+        return cleaned_data
+
+
 class HistorialTransaccionFiltroForm(forms.Form):
     """Recoge los filtros opcionales del historial de transacciones."""
 
