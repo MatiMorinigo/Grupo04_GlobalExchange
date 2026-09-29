@@ -365,7 +365,13 @@ class Transaccion(models.Model):
                 errores["destino_acreditacion"] = (
                     "El destino de acreditacion debe pertenecer al mismo cliente."
                 )
-            elif destino.moneda_id != self.moneda_id:
+            elif (
+                self.tipo_operacion == TipoOperacion.COMPRA
+                and destino.moneda_id != self.moneda_id
+            ) or (
+                self.tipo_operacion == TipoOperacion.VENTA
+                and destino.moneda_id != PYG
+            ):
                 errores["destino_acreditacion"] = (
                     "El destino de acreditacion debe admitir la moneda de la operacion."
                 )
