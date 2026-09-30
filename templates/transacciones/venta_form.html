@@ -52,6 +52,12 @@
                                 {{ metodo_pago.identificacion }}
                             </td>
                         </tr>
+                        {% if destino %}
+                        <tr>
+                            <th>Destino de acreditación</th>
+                            <td>[{{ destino.moneda_id }}] {{ destino.etiqueta }}</td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>
@@ -103,6 +109,7 @@
         {% csrf_token %}
         <input type="hidden" name="moneda" value="{{ form.moneda.value }}">
         <input type="hidden" name="monto_divisa" value="{{ form.monto_divisa.value }}">
+        <input type="hidden" name="destino_acreditacion" value="{{ form.destino_acreditacion.value }}">
         <input type="hidden" name="metodo_pago" value="{{ form.metodo_pago.value }}">
         <input type="hidden" name="id_tasa_vista" value="{{ tasa_vigente.id_tasa }}">
         <input type="hidden" name="confirmado" value="True">
@@ -154,6 +161,21 @@
             </div>
 
             {% for error in form.monto_divisa.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.destino_acreditacion.id_for_label }}" class="form-label">
+                {{ form.destino_acreditacion.label }}
+            </label>
+            {{ form.destino_acreditacion }}
+            <div class="form-text">
+                Dónde querés recibir la divisa una vez procesada la operación.
+                <a href="{% url 'destino-web-create' %}">Registrar un destino</a>.
+            </div>
+
+            {% for error in form.destino_acreditacion.errors %}
                 <div class="text-danger">{{ error }}</div>
             {% endfor %}
         </div>

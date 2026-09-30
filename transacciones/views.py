@@ -311,6 +311,7 @@ class VentaDivisaWebCreateView(ClienteActivoRequiredMixin, FormView):
                 resumen=resumen,
                 categoria_label=cliente.get_categoria_display(),
                 tasa_vigente=tasa,
+                destino=form.cleaned_data.get("destino_acreditacion"),
                 metodo_pago=form.cleaned_data.get("metodo_pago"),
             )
         )
@@ -335,6 +336,7 @@ class VentaDivisaWebCreateView(ClienteActivoRequiredMixin, FormView):
                 usuario=self.request.user,
                 moneda_codigo=moneda.codigo,
                 monto_divisa=monto,
+                destino=form.cleaned_data.get("destino_acreditacion"),
                 metodo_pago=form.cleaned_data.get("metodo_pago"),
                 tasa=tasa,
             )

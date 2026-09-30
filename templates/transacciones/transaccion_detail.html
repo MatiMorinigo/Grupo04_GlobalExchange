@@ -181,13 +181,13 @@
         </a>
 
         {% if transaccion.tipo_operacion == "COMPRA" %}
-            <a href="{% url 'compra-web-create' %}" class="btn btn-outline-primary">
-                Nueva compra
-            </a>
+        <a href="{% url 'compra-web-create' %}" class="btn btn-outline-primary">
+            Nueva compra
+        </a>
         {% else %}
-            <a href="{% url 'venta-web-create' %}" class="btn btn-outline-primary">
-                Nueva venta
-            </a>
+        <a href="{% url 'venta-web-create' %}" class="btn btn-outline-primary">
+            Nueva venta
+        </a>
         {% endif %}
 
         <a href="{% url 'home' %}" class="btn btn-secondary">
@@ -198,4 +198,4 @@
         </a>
     </div>
 </div>
-{% endblock %}
+{% endblock %}c
