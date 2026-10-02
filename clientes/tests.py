@@ -4,7 +4,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from decimal import Decimal
 from django.core.exceptions import ValidationError
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 from django.utils import timezone
 from .models import (
     CategoriaCliente,
@@ -22,7 +22,9 @@ from transacciones.models import (
 )
 
 from .services import evaluar_vip_temporal
-
+from io import StringIO
+from django.core.management import call_command
+from django.core.management.base import CommandError
 
 MIDDLEWARE_SIN_OIDC = [
     'django.middleware.security.SecurityMiddleware',
@@ -666,3 +668,60 @@ class ConfiguracionVIPWebViewTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 403)
+
+class EvaluarVIPTemporalCommandTests(TestCase):
+    """Prueba el comando que dispara la evaluación mensual del VIP temporal."""
+
+    @patch(
+        "clientes.management.commands.evaluar_vip_temporal.evaluar_vip_temporal"
+    )
+    def test_comando_sin_fecha_ejecuta_evaluacion(self, mock_evaluar):
+        mock_evaluar.return_value = {
+            "evaluados": 3,
+            "actualizados": 1,
+        }
+        salida = StringIO()
+
+        call_command(
+            "evaluar_vip_temporal",
+            stdout=salida,
+        )
+
+        mock_evaluar.assert_called_once_with(
+            fecha_referencia=None
+        )
+        self.assertIn(
+            "Clientes evaluados: 3",
+            salida.getvalue(),
+        )
+        self.assertIn(
+            "Clientes actualizados: 1",
+            salida.getvalue(),
+        )
+
+    @patch(
+        "clientes.management.commands.evaluar_vip_temporal.evaluar_vip_temporal"
+    )
+    def test_comando_acepta_fecha_de_referencia(self, mock_evaluar):
+        mock_evaluar.return_value = {
+            "evaluados": 5,
+            "actualizados": 2,
+        }
+
+        call_command(
+            "evaluar_vip_temporal",
+            "--fecha",
+            "2026-10-01",
+        )
+
+        mock_evaluar.assert_called_once_with(
+            fecha_referencia=date(2026, 10, 1)
+        )
+
+    def test_comando_rechaza_fecha_invalida(self):
+        with self.assertRaises(CommandError):
+            call_command(
+                "evaluar_vip_temporal",
+                "--fecha",
+                "01-10-2026",
+            )
