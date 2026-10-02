@@ -23,8 +23,10 @@ urlpatterns = [
     ),
     
     path(
-    "clientes/<int:id_cliente>/desactivar/",
-    ClienteDeactivateView.as_view(),
-    name="cliente-deactivate",
+        "clientes/<int:id_cliente>/desactivar/",
+        ClienteDeactivateView.as_view(),
+        name="cliente-deactivate",
     ),
+    
+    
 ]

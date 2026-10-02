@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ConfiguracionComisionUpdateView,
     CotizacionWebListView,
     MonedaWebActivateView,
     MonedaWebCreateView,
@@ -30,5 +31,10 @@ urlpatterns = [
         "monedas/<str:codigo>/habilitar/",
         MonedaWebActivateView.as_view(),
         name="moneda-web-activate",
+    ),
+    path(
+        "configuracion-comisiones/editar/",
+        ConfiguracionComisionUpdateView.as_view(),
+        name="configuracion-comisiones-editar",
     ),
 ]

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load formato_numeros %}
 
 {% block title %}Editar tasa {{ tasa.moneda_origen.codigo }}/{{ tasa.moneda_destino.codigo }} | Global Exchange{% endblock %}
 
@@ -23,13 +24,13 @@
                 <tbody>
                     <tr>
                         <th scope="row">Actual</th>
-                        <td>{{ tasa.precio_compra }}</td>
-                        <td>{{ tasa.precio_venta }}</td>
+                        <td>{{ tasa.precio_compra|formato_numero:4 }}</td>
+                        <td>{{ tasa.precio_venta|formato_numero:4 }}</td>
                     </tr>
                     <tr>
                         <th scope="row">Nueva</th>
-                        <td>{{ form.precio_compra.value }}</td>
-                        <td>{{ form.precio_venta.value }}</td>
+                        <td>{{ form.precio_compra.value|formato_numero:4 }}</td>
+                        <td>{{ form.precio_venta.value|formato_numero:4 }}</td>
                     </tr>
                 </tbody>
             </table>

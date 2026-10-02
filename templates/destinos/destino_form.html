@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | Global Exchange{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>{{ page_title }}</h1>
+
+    <form method="post" class="mt-4" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+                {% for error in form.non_field_errors %}
+                    <div>{{ error }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="mb-3">
+            <label for="{{ form.tipo.id_for_label }}" class="form-label">
+                {{ form.tipo.label }}
+            </label>
+            {{ form.tipo }}
+
+            {% for error in form.tipo.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.alias.id_for_label }}" class="form-label">
+                {{ form.alias.label }}
+            </label>
+            {{ form.alias }}
+            <div class="form-text">Opcional. Te ayuda a reconocer el destino al operar.</div>
+
+            {% for error in form.alias.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.moneda.id_for_label }}" class="form-label">
+                {{ form.moneda.label }}
+            </label>
+            {{ form.moneda }}
+            <div class="form-text">
+                El destino solo podrá recibir acreditaciones en esta moneda.
+            </div>
+
+            {% for error in form.moneda.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.titular.id_for_label }}" class="form-label">
+                {{ form.titular.label }}
+            </label>
+            {{ form.titular }}
+
+            {% for error in form.titular.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.documento_titular.id_for_label }}" class="form-label">
+                {{ form.documento_titular.label }}
+            </label>
+            {{ form.documento_titular }}
+
+            {% for error in form.documento_titular.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="cuenta" {% if form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.banco.id_for_label }}" class="form-label">
+                {{ form.banco.label }}
+            </label>
+            {{ form.banco }}
+
+            {% for error in form.banco.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="cuenta" {% if form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.tipo_cuenta.id_for_label }}" class="form-label">
+                {{ form.tipo_cuenta.label }}
+            </label>
+            {{ form.tipo_cuenta }}
+
+            {% for error in form.tipo_cuenta.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="cuenta" {% if form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.numero_cuenta.id_for_label }}" class="form-label">
+                {{ form.numero_cuenta.label }}
+            </label>
+            {{ form.numero_cuenta }}
+
+            {% for error in form.numero_cuenta.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="billetera" {% if not form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.proveedor_billetera.id_for_label }}" class="form-label">
+                {{ form.proveedor_billetera.label }}
+            </label>
+            {{ form.proveedor_billetera }}
+
+            {% for error in form.proveedor_billetera.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <div class="mb-3" data-campos="billetera" {% if not form.es_billetera %}hidden{% endif %}>
+            <label for="{{ form.numero_billetera.id_for_label }}" class="form-label">
+                {{ form.numero_billetera.label }}
+            </label>
+            {{ form.numero_billetera }}
+            <div class="form-text">Ingresá el número de celular registrado en la billetera.</div>
+
+            {% for error in form.numero_billetera.errors %}
+                <div class="text-danger">{{ error }}</div>
+            {% endfor %}
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            {{ submit_label }}
+        </button>
+
+        <a href="{% url 'destino-web-list' %}" class="btn btn-secondary">
+            Cancelar
+        </a>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const tipo = document.getElementById("{{ form.tipo.id_for_label }}");
+
+        function actualizarCampos() {
+            const billetera = tipo.value === "BILLETERA_ELECTRONICA";
+            tipo.form.querySelectorAll("[data-campos]").forEach(grupo => {
+                const visible = (grupo.dataset.campos === "billetera") === billetera;
+                grupo.hidden = !visible;
+                grupo.querySelectorAll("input, select").forEach(campo => {
+                    campo.disabled = !visible;
+                    campo.required = visible;
+                });
+            });
+        }
+
+        tipo.addEventListener("change", actualizarCampos);
+        actualizarCampos();
+    })();
+</script>
+{% endblock %}

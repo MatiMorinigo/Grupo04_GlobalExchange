@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load formato_numeros %}
 
 {% block title %}Simulador de conversión | Global Exchange{% endblock %}
 
@@ -140,7 +141,7 @@
                         <div class="border rounded p-3 h-100">
                             <p class="text-secondary small mb-1">Monto ingresado</p>
                             <h4 class="mb-0 simulation-amount">
-                                {{ resultado.moneda_origen }} {{ resultado.monto_origen|floatformat:2 }}
+                                {{ resultado.moneda_origen }} {{ resultado.monto_origen|formato_numero:2 }}
                             </h4>
                         </div>
                     </div>
@@ -151,9 +152,9 @@
                             <h4 class="mb-0 text-success simulation-amount">
                                 {{ resultado.moneda_destino }}
                                 {% if resultado.moneda_destino == "PYG" %}
-                                    {{ resultado.total_final|floatformat:0 }}
+                                    {{ resultado.total_final|formato_numero:2 }}
                                 {% else %}
-                                    {{ resultado.total_final|floatformat:2 }}
+                                    {{ resultado.total_final|formato_numero:2 }}
                                 {% endif %}
                             </h4>
                         </div>
@@ -174,24 +175,24 @@
                             </tr>
                             <tr>
                                 <th scope="row">Tasa aplicada</th>
-                                <td class="simulation-amount">{{ resultado.tasa_aplicada|floatformat:4 }}</td>
+                                <td class="simulation-amount">{{ resultado.tasa_aplicada|formato_numero:4 }}</td>
                             </tr>
                             <tr>
                                 <th scope="row">Subtotal</th>
                                 <td class="simulation-amount">
                                     {{ resultado.moneda_destino }}
                                     {% if resultado.moneda_destino == "PYG" %}
-                                        {{ resultado.subtotal|floatformat:0 }}
+                                        {{ resultado.subtotal|formato_numero:2 }}
                                     {% else %}
-                                        {{ resultado.subtotal|floatformat:2 }}
+                                        {{ resultado.subtotal|formato_numero:2 }}
                                     {% endif %}
                                 </td>
                             </tr>
                             <tr>
                                 <th scope="row">Beneficio aplicado</th>
                                 <td class="simulation-amount">
-                                    {{ resultado.beneficio_porcentaje|floatformat:2 }}%
-                                    · {{ resultado.moneda_destino }} {{ resultado.beneficio_monto|floatformat:2 }}
+                                    {{ resultado.beneficio_porcentaje|formato_numero:2 }}%
+                                    · {{ resultado.moneda_destino }} {{ resultado.beneficio_monto|formato_numero:2 }}
                                 </td>
                             </tr>
                             <tr>

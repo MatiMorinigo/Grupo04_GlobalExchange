@@ -155,6 +155,14 @@
                             &middot; {{ cliente_activo.get_tipo_display }}
                         </div>
 
+                        {% if cliente_activo.categoria != "VIP" and cliente_activo.categoria_efectiva == "VIP" %}
+                        <div class="mt-2 small text-warning">
+                            <i class="bi bi-stars me-1" aria-hidden="true"></i>
+                            <strong>Promoción VIP temporal activa.</strong>
+                            Vigente hasta: {{ cliente_activo.vip_vigente_hasta|date:"d/m/Y" }}
+                        </div>
+                        {% endif %}
+
                         {% else %}
 
                         <h5 class="mb-0 fw-semibold text-secondary">
@@ -300,16 +308,41 @@
 
             {% if module.enabled %}
 
-            <a href="{{ module.href }}"
-               class="small-box-footer {{ module.link_class }}"
-               aria-label="{{ module.action_label }}">
+                {% if module.actions %}
 
-                <span>{{ module.action_label }}</span>
+                <div class="d-flex w-100">
 
-                <i class="bi bi-arrow-right-circle module-card-action-icon"
-                   aria-hidden="true"></i>
+                    {% for action in module.actions %}
 
-            </a>
+                    <a href="{{ action.href }}"
+                       class="small-box-footer flex-fill {{ module.link_class|default:'link-light' }} {% if not forloop.last %}border-end border-white border-opacity-25{% endif %}"
+                       aria-label="{{ action.label }}">
+
+                        <span>{{ action.label }}</span>
+
+                        <i class="bi bi-arrow-right-circle module-card-action-icon"
+                           aria-hidden="true"></i>
+
+                    </a>
+
+                    {% endfor %}
+
+                </div>
+
+                {% else %}
+
+                <a href="{{ module.href }}"
+                   class="small-box-footer {{ module.link_class }}"
+                   aria-label="{{ module.action_label }}">
+
+                    <span>{{ module.action_label }}</span>
+
+                    <i class="bi bi-arrow-right-circle module-card-action-icon"
+                       aria-hidden="true"></i>
+
+                </a>
+
+                {% endif %}
 
             {% else %}
 

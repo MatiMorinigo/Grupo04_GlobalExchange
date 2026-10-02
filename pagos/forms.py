@@ -1,5 +1,6 @@
 from django import forms
 
+from .constants import PROVEEDORES_BILLETERA
 from .models import MetodoPago, TipoMetodoPago
 from .validators import validar_numero_tarjeta, validar_vencimiento_no_vencido
 
@@ -15,12 +16,7 @@ class MetodoPagoForm(forms.ModelForm):
     proveedor_billetera = forms.ChoiceField(
         label="Proveedor de la billetera",
         required=False,
-        choices=[
-            ("", "Seleccioná un proveedor"),
-            ("Tigo Money", "Tigo Money"),
-            ("Personal Pay", "Personal Pay"),
-            ("Giros Claro", "Giros Claro"),
-        ],
+        choices=[("", "Seleccioná un proveedor"), *PROVEEDORES_BILLETERA],
         widget=forms.Select(attrs={"class": "form-select"}),
         error_messages={
             "required": "Seleccioná un proveedor de billetera.",

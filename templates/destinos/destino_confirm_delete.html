@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Eliminar destino de acreditación | Global Exchange{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Eliminar destino de acreditación</h1>
+
+    <p class="mt-3">
+        ¿Confirmás que querés eliminar definitivamente
+        <strong>{{ destino.get_tipo_display }} {{ destino.identificacion }}</strong>
+        en <strong>{{ destino.moneda.codigo }}</strong>,
+        a nombre de <strong>{{ destino.titular }}</strong>?
+        Esta acción no se puede deshacer.
+    </p>
+
+    <form method="post" class="mt-4">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">
+            Eliminar definitivamente
+        </button>
+        <a href="{% url 'destino-web-list' %}" class="btn btn-secondary">
+            Cancelar
+        </a>
+    </form>
+</div>
+{% endblock %}
