@@ -8,6 +8,7 @@ from .views import (
     ClienteWebUpdateView,
     ConfiguracionBeneficioCategoriaListView,
     ConfiguracionBeneficioCategoriaUpdateView,
+    ConfiguracionVIPUpdateView,
 )
 
 
@@ -31,4 +32,9 @@ urlpatterns = [
     ConfiguracionBeneficioCategoriaUpdateView.as_view(),
     name="configuracion_beneficios_editar",
     ),
+    path(
+            "configuracion/vip/",
+            ConfiguracionVIPUpdateView.as_view(),
+            name="configuracion-vip",
+        ),
 ]

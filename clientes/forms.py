@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import CategoriaCliente, Cliente, TipoCliente, ConfiguracionBeneficioCategoria
+from .models import CategoriaCliente, Cliente, TipoCliente, ConfiguracionBeneficioCategoria, ConfiguracionVIP
 
 
 class ClienteForm(forms.ModelForm):
@@ -78,4 +78,14 @@ class ConfiguracionBeneficioCategoriaForm(forms.ModelForm):
         fields = [
             "porcentaje_beneficio",
             "limite_mensual_pyg",
+        ]
+
+class ConfiguracionVIPForm(forms.ModelForm):
+    """Permite modificar los parámetros globales de la promoción VIP temporal."""
+
+    class Meta:
+        model = ConfiguracionVIP
+        fields = [
+            "umbral_mensual_pyg",
+            "duracion_meses",
         ]

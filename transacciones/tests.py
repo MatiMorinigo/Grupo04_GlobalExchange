@@ -346,7 +346,44 @@ class CalculoCompraTests(TestCase):
 
         with self.assertRaises(OperacionCambiariaError):
             calcular_compra(self.cliente_minorista, "USD", Decimal("100.00"))
+            
+    def test_compra_aplica_beneficio_vip_a_cliente_con_vip_temporal(self):
+        _configurar_beneficio(
+            CategoriaCliente.VIP,
+            "5.00",
+            "50000000.00",
+        )
+        _configurar_comision("0.00")
 
+        self.cliente_minorista.vip_vigente_hasta = (
+            timezone.localdate() + timedelta(days=30)
+        )
+        self.cliente_minorista.save(
+            update_fields=["vip_vigente_hasta"]
+        )
+
+        calculo = calcular_compra(
+            self.cliente_minorista,
+            "USD",
+            Decimal("100.00"),
+        )
+
+        self.assertEqual(
+            self.cliente_minorista.categoria,
+            CategoriaCliente.MINORISTA,
+        )
+        self.assertEqual(
+            calculo["categoria_aplicada"],
+            CategoriaCliente.VIP,
+        )
+        self.assertEqual(
+            calculo["beneficio_monto_pyg"],
+            Decimal("36750.00"),
+        )
+        self.assertEqual(
+            calculo["total_pyg"],
+            Decimal("698250.00"),
+        )
 
 @override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC)
 class CompraDivisaWebTests(TestCase):
