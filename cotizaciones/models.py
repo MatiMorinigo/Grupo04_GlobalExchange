@@ -351,3 +351,4 @@ class ConfiguracionComision(models.Model):
             str: Comisión de compra y de venta vigentes.
         """
         return f"Compra {self.porcentaje_compra}% - Venta {self.porcentaje_venta}%"
+

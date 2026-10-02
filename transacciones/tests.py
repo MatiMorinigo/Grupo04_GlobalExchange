@@ -35,6 +35,7 @@ from .services import (
     OperacionCambiariaError,
     calcular_compra,
     crear_transaccion_compra,
+    calcular_venta,
 )
 
 
@@ -389,7 +390,44 @@ class CalculoCompraTests(TestCase):
 
         with self.assertRaises(OperacionCambiariaError):
             calcular_compra(self.cliente_minorista, "USD", Decimal("100.00"))
+            
+    def test_compra_aplica_beneficio_vip_a_cliente_con_vip_temporal(self):
+        _configurar_beneficio(
+            CategoriaCliente.VIP,
+            "5.00",
+            "50000000.00",
+        )
+        _configurar_comision("0.00")
 
+        self.cliente_minorista.vip_vigente_hasta = (
+            timezone.localdate() + timedelta(days=30)
+        )
+        self.cliente_minorista.save(
+            update_fields=["vip_vigente_hasta"]
+        )
+
+        calculo = calcular_compra(
+            self.cliente_minorista,
+            "USD",
+            Decimal("100.00"),
+        )
+
+        self.assertEqual(
+            self.cliente_minorista.categoria,
+            CategoriaCliente.MINORISTA,
+        )
+        self.assertEqual(
+            calculo["categoria_aplicada"],
+            CategoriaCliente.VIP,
+        )
+        self.assertEqual(
+            calculo["beneficio_monto_pyg"],
+            Decimal("36750.00"),
+        )
+        self.assertEqual(
+            calculo["total_pyg"],
+            Decimal("698250.00"),
+        )
 
 @override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC)
 class CompraDivisaWebTests(TestCase):
@@ -1190,3 +1228,64 @@ class HistorialTransaccionesWebTests(TestCase):
 
         self.assertEqual(response.status_code, 405)
         self.assertEqual(Transaccion.objects.count(), cantidad_antes)
+
+class CalculoVentaVIPTemporalTests(TestCase):
+    """Prueba que una venta respete la categoría VIP temporal."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.cliente = Cliente.objects.create(
+            ruc="80000901-1",
+            nombre="Cliente Minorista con VIP temporal",
+            categoria=CategoriaCliente.MINORISTA,
+            tipo=TipoCliente.FISICA,
+        )
+
+        cls.pyg = Moneda.objects.get(codigo="PYG")
+        cls.usd = Moneda.objects.get(codigo="USD")
+
+        cls.tasa = TasaCambio.objects.create(
+            moneda_origen=cls.usd,
+            moneda_destino=cls.pyg,
+            precio_compra=Decimal("7200.0000"),
+            precio_venta=Decimal("7350.0000"),
+            vigente=True,
+        )
+
+    def test_venta_aplica_beneficio_vip_a_cliente_con_vip_temporal(self):
+        _configurar_beneficio(
+            CategoriaCliente.VIP,
+            "5.00",
+            "50000000.00",
+        )
+
+        self.cliente.vip_vigente_hasta = (
+            timezone.localdate() + timedelta(days=30)
+        )
+        self.cliente.save(update_fields=["vip_vigente_hasta"])
+
+        calculo = calcular_venta(
+            self.cliente,
+            "USD",
+            Decimal("100.00"),
+        )
+
+        self.assertEqual(
+            self.cliente.categoria,
+            CategoriaCliente.MINORISTA,
+        )
+
+        self.assertEqual(
+            calculo["categoria_aplicada"],
+            CategoriaCliente.VIP,
+        )
+
+        self.assertEqual(
+            calculo["beneficio_monto_pyg"],
+            Decimal("36000.00"),
+        )
+
+        self.assertEqual(
+            calculo["total_pyg"],
+            Decimal("756000.00"),
+        )

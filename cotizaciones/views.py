@@ -646,7 +646,7 @@ def obtener_categoria_para_simulacion(request):
         and perfil.cliente_activo
         and perfil.cliente_activo.activo
     ):
-        return perfil.cliente_activo.categoria
+        return perfil.cliente_activo.categoria_efectiva
 
     return CategoriaCliente.MINORISTA
 

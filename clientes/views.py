@@ -10,10 +10,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from core.mixins import AdminRequiredMixin
 from cotizaciones.models import ConfiguracionComision
-from .forms import ClienteForm, ConfiguracionBeneficioCategoriaForm
-from .models import Cliente, ConfiguracionBeneficioCategoria
+from .forms import ClienteForm, ConfiguracionBeneficioCategoriaForm, ConfiguracionVIPForm
+from .models import Cliente, ConfiguracionBeneficioCategoria, ConfiguracionVIP
 from .permissions import EsAdministrador
 from .serializers import ClienteSerializer
+
 
 class ClienteCreateView(generics.CreateAPIView):
     """Expone la creación de clientes por API para administradores.
@@ -398,3 +399,36 @@ class ConfiguracionBeneficioCategoriaUpdateView(AdminRequiredMixin, UpdateView):
             "La configuración de beneficios fue actualizada correctamente.",
         )
         return super().form_valid(form)
+
+class ConfiguracionVIPUpdateView(AdminRequiredMixin, UpdateView):
+    """Permite al administrador modificar la configuración del VIP temporal."""
+
+    model = ConfiguracionVIP
+    form_class = ConfiguracionVIPForm
+    template_name = "clientes/configuracion_vip_form.html"
+    success_url = reverse_lazy("configuracion-vip")
+
+    def get_object(self, queryset=None):
+        """Devuelve la única configuración VIP global del sistema."""
+        return ConfiguracionVIP.obtener()
+
+    def form_valid(self, form):
+        """Registra el usuario que realizó la modificación."""
+        form.instance.modificado_por = self.request.user
+        messages.success(
+            self.request,
+            "La configuración VIP temporal fue actualizada correctamente.",
+        )
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        """Prepara los datos adicionales de la pantalla."""
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "active_menu": "configuracion",
+                "page_title": "Configuración VIP temporal",
+                "submit_label": "Guardar cambios",
+            }
+        )
+        return context

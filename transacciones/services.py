@@ -102,7 +102,7 @@ def calcular_compra(cliente, moneda_codigo, monto_divisa, tasa=None):
     subtotal_pyg = redondear_monto(monto * tasa_aplicada)
 
     try:
-        configuracion = obtener_beneficio_categoria(cliente.categoria)
+        configuracion = obtener_beneficio_categoria(cliente.categoria_efectiva)
     except SimulacionConversionError as error:
         raise OperacionCambiariaError(str(error)) from error
 
@@ -136,7 +136,7 @@ def calcular_compra(cliente, moneda_codigo, monto_divisa, tasa=None):
         "fecha_vigencia_tasa": tasa.fecha_vigencia,
         "monto_divisa": redondear_monto(monto),
         "subtotal_pyg": subtotal_pyg,
-        "categoria_aplicada": cliente.categoria,
+        "categoria_aplicada": cliente.categoria_efectiva,
         "beneficio_porcentaje": beneficio_porcentaje,
         "limite_beneficio_pyg": redondear_monto(limite_beneficio_pyg),
         "monto_beneficiado_pyg": redondear_monto(monto_beneficiado_pyg),
@@ -253,7 +253,7 @@ def calcular_venta(cliente, moneda_codigo, monto_divisa, tasa=None):
     subtotal_pyg = redondear_monto(monto * tasa_aplicada)
 
     try:
-        configuracion = obtener_beneficio_categoria(cliente.categoria)
+        configuracion = obtener_beneficio_categoria(cliente.categoria_efectiva)
     except SimulacionConversionError as error:
         raise OperacionCambiariaError(str(error)) from error
 
@@ -289,7 +289,7 @@ def calcular_venta(cliente, moneda_codigo, monto_divisa, tasa=None):
         "fecha_vigencia_tasa": tasa.fecha_vigencia,
         "monto_divisa": redondear_monto(monto),
         "subtotal_pyg": subtotal_pyg,
-        "categoria_aplicada": cliente.categoria,
+        "categoria_aplicada": cliente.categoria_efectiva,
         "beneficio_porcentaje": beneficio_porcentaje,
         "limite_beneficio_pyg": redondear_monto(limite_beneficio_pyg),
         "monto_beneficiado_pyg": redondear_monto(monto_beneficiado_pyg),
