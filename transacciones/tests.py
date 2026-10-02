@@ -235,6 +235,49 @@ class TransaccionModelTests(TestCase):
         self.assertEqual(Transaccion.objects.count(), 1)
         self.assertEqual(transaccion.tasa_aplicada, Decimal("7400.0000"))
 
+    def test_destino_acreditacion_en_venta_acepta_pyg(self):
+        destino_pyg = DestinoAcreditacion.objects.create(
+            cliente=self.cliente,
+            moneda=self.pyg,
+            tipo=TipoDestinoAcreditacion.CUENTA_BANCARIA,
+            banco="Banco PYG",
+            tipo_cuenta=TipoCuentaBancaria.CAJA_AHORRO,
+            numero_cuenta="111111",
+            titular="Titular Test",
+            documento_titular="1234567",
+            alias="Cuenta PYG",
+        )
+        transaccion = self.crear_transaccion(
+            tipo_operacion=TipoOperacion.VENTA,
+            moneda=self.usd,
+            tasa_aplicada=self.tasa_usd.precio_compra,
+            destino_acreditacion=destino_pyg,
+        )
+        transaccion.full_clean()  # No debe lanzar ValidationError
+
+    def test_destino_acreditacion_en_venta_rechaza_otra_moneda(self):
+        destino_usd = DestinoAcreditacion.objects.create(
+            cliente=self.cliente,
+            moneda=self.usd,
+            tipo=TipoDestinoAcreditacion.CUENTA_BANCARIA,
+            banco="Banco USD",
+            tipo_cuenta=TipoCuentaBancaria.CAJA_AHORRO,
+            numero_cuenta="222222",
+            titular="Titular Test",
+            documento_titular="1234567",
+            alias="Cuenta USD",
+        )
+        transaccion = self.crear_transaccion(
+            tipo_operacion=TipoOperacion.VENTA,
+            moneda=self.usd,
+            tasa_aplicada=self.tasa_usd.precio_compra,
+            destino_acreditacion=destino_usd,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            transaccion.full_clean()
+        self.assertIn("destino_acreditacion", ctx.exception.message_dict)
+
+
 
 def _configurar_beneficio(categoria, porcentaje, limite):
     """Ajusta el beneficio de una categoria para los calculos de prueba."""

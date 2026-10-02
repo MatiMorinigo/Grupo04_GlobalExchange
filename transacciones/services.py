@@ -305,6 +305,7 @@ def crear_transaccion_venta(
     usuario,
     moneda_codigo,
     monto_divisa,
+    destino=None,
     metodo_pago=None,
     tasa=None,
 ):
@@ -315,6 +316,8 @@ def crear_transaccion_venta(
         usuario (django.contrib.auth.models.User): Usuario que la registra.
         moneda_codigo (str): Código de la moneda extranjera a vender.
         monto_divisa (decimal.Decimal): Cantidad de divisa que el cliente entrega.
+        destino (destinos.models.DestinoAcreditacion or None): Destino donde
+            se acreditará la divisa, si el cliente ya lo eligió.
         metodo_pago (pagos.models.MetodoPago or None): Medio con el que el
             cliente realizará la operación.
         tasa (cotizaciones.models.TasaCambio or None): Cotización a aplicar.
@@ -334,6 +337,7 @@ def crear_transaccion_venta(
         transaccion = Transaccion(
             cliente=cliente,
             creada_por=usuario,
+            destino_acreditacion=destino,
             metodo_pago=metodo_pago,
             **calculo,
         )
