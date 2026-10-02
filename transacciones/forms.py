@@ -8,6 +8,15 @@ from pagos.models import MetodoPago
 from .models import EstadoTransaccion, TipoOperacion
 
 
+class ClienteChoiceField(forms.ModelChoiceField):
+    """Identifica a cada cliente por su nombre y RUC en el selector."""
+
+    def label_from_instance(self, obj):
+        if obj.ruc:
+            return f"{obj.nombre} (RUC: {obj.ruc})"
+        return obj.nombre
+
+
 class MetodoPagoChoiceField(forms.ModelChoiceField):
     """Presenta cada método de pago con su tipo y su identificación enmascarada."""
 
@@ -286,7 +295,7 @@ class VentaDivisaForm(forms.Form):
 class HistorialTransaccionFiltroForm(forms.Form):
     """Recoge los filtros opcionales del historial de transacciones."""
 
-    cliente = forms.ModelChoiceField(
+    cliente = ClienteChoiceField(
         label="Cliente",
         queryset=Cliente.objects.none(),
         required=False,
