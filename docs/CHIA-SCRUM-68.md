@@ -65,6 +65,12 @@ El bloqueo usa `select_for_update(of=("self",))`, porque PostgreSQL no admite `F
 ### 8. Solo el cliente de la operación puede pagarla
 La acción de pago busca la transacción dentro del cliente activo del usuario y acepta únicamente POST con token CSRF. Un administrador o analista que consulta el historial general no puede pagar operaciones de otros clientes.
 
+### 9. Reintento con otro método de pago
+Si el intento anterior fue rechazado o terminó en error, o si el método de la operación ni siquiera permite iniciar el pago (por ejemplo, una tarjeta sin token), el detalle de la operación ofrece un selector con los métodos activos del cliente para pagar con otro, o con el mismo. Aplica por igual a compras y ventas.
+- El método elegido pasa a ser el método de la operación solo si el pago puede iniciarse; si el nuevo método no está habilitado, la operación conserva el anterior.
+- Cada intento conserva el método con el que se hizo, de modo que el historial de pagos sigue siendo fiel.
+- El servidor valida que el método sea activo y del cliente de la operación, sin confiar en lo que muestra el selector.
+
 ## Criterios de aceptación cumplidos
 - **Solo transacciones pendientes:** el servicio lo verifica con la fila bloqueada y el botón "Pagar" solo aparece en ese estado.
 - **Método de pago habilitado:** el método debe estar activo y pertenecer al cliente. `get_proveedor` y la validación de cada proveedor controlan el tipo de método, el token y el importe.
