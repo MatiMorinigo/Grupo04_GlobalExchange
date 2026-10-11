@@ -1,7 +1,10 @@
+import logging
 from decimal import Decimal
+from enum import StrEnum
 
 from django.db import IntegrityError
 from django.db import transaction as db_transaction
+from django.utils import timezone
 
 from cotizaciones.models import ConfiguracionComision, TasaCambio
 from cotizaciones.services import (
@@ -17,6 +20,7 @@ from integrations.proveedores_pago import (
 
 from .models import (
     ESTADOS_PAGO_ACTIVOS,
+    ESTADOS_PAGO_FINALES,
     EstadoPago,
     EstadoTransaccion,
     Pago,
@@ -25,6 +29,7 @@ from .models import (
 )
 
 
+logger = logging.getLogger(__name__)
 
 PYG = "PYG"
 CIEN = Decimal("100")
@@ -495,13 +500,157 @@ def iniciar_pago(transaccion, usuario, metodo_pago=None):
     try:
         resultado = proveedor.iniciar_pago(pago)
     except ProveedorPagoError as error:
-        pago.estado = EstadoPago.RECHAZADO if error.rechazado else EstadoPago.ERROR
-        pago.referencia_externa = error.referencia_externa or None
-        pago.mensaje_proveedor = error.detalle or error.mensaje_usuario
-        pago.save(update_fields=["estado", "referencia_externa", "mensaje_proveedor", "actualizado_en"])
+        _registrar_respuesta_inicio(
+            pago,
+            estado=EstadoPago.RECHAZADO if error.rechazado else EstadoPago.ERROR,
+            referencia_externa=error.referencia_externa or None,
+            mensaje_proveedor=error.detalle or error.mensaje_usuario,
+        )
         raise PagoNoIniciableError(error.mensaje_usuario) from error
 
-    pago.estado = EstadoPago.EN_PROCESO
-    pago.referencia_externa = resultado.referencia_externa
-    pago.save(update_fields=["estado", "referencia_externa", "actualizado_en"])
+    _registrar_respuesta_inicio(
+        pago,
+        estado=EstadoPago.EN_PROCESO,
+        referencia_externa=resultado.referencia_externa,
+    )
     return pago
+
+
+def _registrar_respuesta_inicio(pago, **campos):
+    """Guarda la respuesta del proveedor al iniciar un pago, si nadie la resolvió antes.
+
+    La confirmación del proveedor puede llegar (por webhook) antes de que
+    termine la llamada que inició el pago. Por eso la respuesta solo se
+    guarda si el pago sigue ``INICIADO``: nunca pisa un resultado definitivo.
+    En cualquier caso, ``pago`` queda actualizado con el estado de la base.
+
+    Args:
+        pago (Pago): Pago recién enviado al proveedor.
+        **campos: Valores a guardar (estado, referencia y mensaje).
+    """
+    campos["actualizado_en"] = timezone.now()
+    Pago.objects.filter(pk=pago.pk, estado=EstadoPago.INICIADO).update(**campos)
+    pago.refresh_from_db()
+
+
+class ResultadoProcesamiento(StrEnum):
+    """Indica qué hizo el sistema con un resultado informado por un proveedor."""
+
+    CONFIRMADO = "CONFIRMADO"
+    """El pago se confirmó (y la operación pendiente se completó)."""
+    RECHAZADO = "RECHAZADO"
+    """El pago se registró como rechazado; la operación sigue pendiente."""
+    DUPLICADO = "DUPLICADO"
+    """El pago ya tenía un resultado definitivo; no se modificó nada."""
+    IGNORADO = "IGNORADO"
+    """No existe un pago del sistema con esos datos."""
+    INVALIDO = "INVALIDO"
+    """Los datos no coinciden con el pago registrado; no se modificó nada."""
+
+
+ESTADOS_PAGO_RESOLUBLES = (EstadoPago.INICIADO, EstadoPago.EN_PROCESO, EstadoPago.ERROR)
+"""tuple[str, ...]: Estados de un pago que todavía aceptan un resultado del proveedor.
+
+``ERROR`` se incluye porque un fallo de comunicación de nuestro lado no
+impide que el proveedor haya cobrado el pago.
+"""
+
+
+def _buscar_pago(proveedor_codigo, resultado):
+    """Encuentra el pago al que se refiere un resultado del proveedor.
+
+    Prioriza el ``id_pago`` que el sistema envió al iniciar el cobro, porque
+    sigue funcionando aunque la referencia todavía no se haya guardado.
+    """
+    pagos = Pago.objects.filter(proveedor=proveedor_codigo)
+    if resultado.id_pago is not None:
+        return pagos.filter(pk=resultado.id_pago).first()
+    if resultado.referencia_externa:
+        return pagos.filter(referencia_externa=resultado.referencia_externa).first()
+    return None
+
+
+def procesar_resultado_pago(proveedor_codigo, resultado):
+    """Aplica el resultado de un pago informado por el proveedor, una sola vez.
+
+    Es el único punto donde se confirma o se rechaza un pago: lo usan el
+    webhook de Stripe, el simulador de billetera y el comando
+    ``sincronizar_pagos``. Antes de aplicar el resultado comprueba que la
+    referencia, el importe y la moneda coincidan con el pago registrado.
+
+    Si el pago fue aprobado, queda ``CONFIRMADO`` con la fecha de
+    confirmación y la transacción pendiente pasa a ``COMPLETADA`` con esa
+    misma fecha. Si fue rechazado, queda ``RECHAZADO`` y la transacción no
+    cambia. Un pago que ya tiene un resultado definitivo no se modifica, por
+    lo que una notificación repetida no completa dos veces la operación.
+
+    Args:
+        proveedor_codigo (str): Valor de ``ProveedorPago`` del proveedor que
+            informa el resultado.
+        resultado (integrations.proveedores_pago.ResultadoPago): Resultado
+            ya validado por el proveedor.
+
+    Returns:
+        ResultadoProcesamiento: Qué se hizo con el resultado.
+    """
+    pago = _buscar_pago(proveedor_codigo, resultado)
+    if pago is None:
+        logger.info(
+            "Resultado de pago ignorado: no existe un pago de %s con id %s ni referencia %s.",
+            proveedor_codigo, resultado.id_pago, resultado.referencia_externa,
+        )
+        return ResultadoProcesamiento.IGNORADO
+
+    with db_transaction.atomic():
+        # Mismo orden de bloqueo que iniciar_pago: primero la operación, después el pago.
+        transaccion = Transaccion.objects.select_for_update().get(pk=pago.transaccion_id)
+        pago = Pago.objects.select_for_update().get(pk=pago.pk)
+
+        if pago.referencia_externa and pago.referencia_externa != resultado.referencia_externa:
+            logger.warning(
+                "Resultado de pago inválido: el pago %s tiene la referencia %s y se recibió %s.",
+                pago.pk, pago.referencia_externa, resultado.referencia_externa,
+            )
+            return ResultadoProcesamiento.INVALIDO
+        if (resultado.monto is not None and resultado.monto != pago.monto) or (
+            resultado.moneda is not None and resultado.moneda != pago.moneda_id
+        ):
+            logger.warning(
+                "Resultado de pago inválido: el pago %s es de %s %s y se informó %s %s.",
+                pago.pk, pago.monto, pago.moneda_id, resultado.monto, resultado.moneda,
+            )
+            return ResultadoProcesamiento.INVALIDO
+        if pago.estado in ESTADOS_PAGO_FINALES:
+            logger.info("Resultado repetido para el pago %s (%s): sin cambios.", pago.pk, pago.estado)
+            return ResultadoProcesamiento.DUPLICADO
+
+        campos = ["estado", "mensaje_proveedor", "actualizado_en"]
+        if not pago.referencia_externa:
+            pago.referencia_externa = resultado.referencia_externa
+            campos.append("referencia_externa")
+
+        if not resultado.aprobado:
+            pago.estado = EstadoPago.RECHAZADO
+            pago.mensaje_proveedor = resultado.detalle or "El proveedor rechazó el pago."
+            pago.save(update_fields=campos)
+            return ResultadoProcesamiento.RECHAZADO
+
+        ahora = timezone.now()
+        pago.estado = EstadoPago.CONFIRMADO
+        pago.confirmado_en = ahora
+        pago.mensaje_proveedor = ""
+        if transaccion.estado == EstadoTransaccion.PENDIENTE:
+            transaccion.estado = EstadoTransaccion.COMPLETADA
+            transaccion.completada_en = ahora
+            transaccion.save(update_fields=["estado", "completada_en", "actualizada_en"])
+        else:
+            pago.mensaje_proveedor = (
+                f"Pago confirmado sobre una operación {transaccion.get_estado_display().lower()}: "
+                "requiere revisión."
+            )
+            logger.warning(
+                "El pago %s se confirmó pero la operación %s está %s.",
+                pago.pk, transaccion.pk, transaccion.estado,
+            )
+        pago.save(update_fields=campos + ["confirmado_en"])
+        return ResultadoProcesamiento.CONFIRMADO

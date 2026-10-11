@@ -7,6 +7,7 @@ from .views import (
     TransaccionIniciarPagoView,
     TransaccionWebDetailView,
     VentaDivisaWebCreateView,
+    webhook_stripe,
 )
 
 
@@ -33,4 +34,5 @@ urlpatterns = [
         TransaccionIniciarPagoView.as_view(),
         name="transaccion-web-iniciar-pago",
     ),
+    path("webhooks/stripe/", webhook_stripe, name="webhook-stripe"),
 ]

@@ -1,18 +1,29 @@
+import logging
 from functools import cached_property
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from django.views.generic import DetailView, FormView, ListView
 
 from core.keycloak import tiene_rol
 from core.mixins import ClienteActivoRequiredMixin
+from integrations.proveedores_pago import ConfirmacionInvalidaError, StripeProveedor
 from pagos.models import MetodoPago
 from usuarios.models import obtener_cliente_activo
 
 from .forms import CompraDivisaForm, HistorialTransaccionFiltroForm, VentaDivisaForm
-from .models import ESTADOS_PAGO_ACTIVOS, EstadoPago, EstadoTransaccion, Transaccion
+from .models import (
+    ESTADOS_PAGO_ACTIVOS,
+    EstadoPago,
+    EstadoTransaccion,
+    ProveedorPago,
+    Transaccion,
+)
 from .services import (
     OperacionCambiariaError,
     PagoNoIniciableError,
@@ -25,7 +36,11 @@ from .services import (
     metodo_permite_pagar,
     obtener_tasa_vigente_compra,
     obtener_tasa_vigente_venta,
+    procesar_resultado_pago,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class CompraDivisaWebCreateView(ClienteActivoRequiredMixin, FormView):
@@ -600,3 +615,41 @@ class TransaccionIniciarPagoView(ClienteActivoRequiredMixin, View):
                 "cuando el proveedor confirme el pago.",
             )
         return redirect("transaccion-web-detail", id_transaccion=id_transaccion)
+
+
+@csrf_exempt
+@require_POST
+def webhook_stripe(request):
+    """Recibe las notificaciones de Stripe sobre el resultado de los pagos.
+
+    Stripe no envía token CSRF ni sesión: la autenticidad se comprueba con
+    la firma del encabezado ``Stripe-Signature``. Una notificación con firma
+    inválida responde 400 y no modifica nada. Las válidas responden 200 aun
+    cuando no cambian ningún pago (evento ajeno, repetido o con datos que
+    no coinciden), para que Stripe no las reintente.
+
+    Args:
+        request (django.http.HttpRequest): Solicitud enviada por Stripe.
+
+    Returns:
+        django.http.HttpResponse: Respuesta vacía con el código de estado.
+    """
+    try:
+        resultado = StripeProveedor().interpretar_evento(
+            request.body,
+            request.META.get("HTTP_STRIPE_SIGNATURE", ""),
+        )
+    except ConfirmacionInvalidaError as error:
+        logger.warning("Webhook de Stripe rechazado: %s", error)
+        return HttpResponse(status=400)
+
+    if resultado is None:
+        return HttpResponse(status=200)
+
+    procesamiento = procesar_resultado_pago(ProveedorPago.STRIPE, resultado)
+    logger.info(
+        "Webhook de Stripe para %s procesado: %s.",
+        resultado.referencia_externa,
+        procesamiento,
+    )
+    return HttpResponse(status=200)
