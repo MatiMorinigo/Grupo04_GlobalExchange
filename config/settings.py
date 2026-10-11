@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "core",
     "destinos",
     "integrations",
+    "notificaciones",
     "pagos",
     "transacciones",
     "usuarios",
@@ -124,6 +125,10 @@ EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 EMAIL_USE_TLS = True
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", 10))
+# Segundos de espera entre correos, para servidores que limitan el ritmo de envío.
+NOTIFICACIONES_PAUSA_ENVIO = float(os.getenv("NOTIFICACIONES_PAUSA_ENVIO", 0))
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Global Exchange <no-responder@globalexchange.com.py>")
 
 # CORS
 CORS_ALLOWED_ORIGINS = [

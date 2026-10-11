@@ -1,0 +1,10 @@
+{% load formato_numeros %}{% autoescape off %}Hola:
+
+Global Exchange publicó una nueva cotización para {{ tasa.moneda_origen.nombre }} ({{ tasa.moneda_origen_id }}/{{ tasa.moneda_destino_id }}).
+
+Compra: {{ tasa.moneda_destino.simbolo }} {{ tasa.precio_compra|formato_numero:4 }}
+Venta: {{ tasa.moneda_destino.simbolo }} {{ tasa.precio_venta|formato_numero:4 }}
+Vigente desde: {{ tasa.fecha_vigencia|date:"d/m/Y H:i" }}
+
+Global Exchange
+{% endautoescape %}

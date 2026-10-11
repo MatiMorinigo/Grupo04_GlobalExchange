@@ -29,6 +29,7 @@ from .models import (
 from .serializers import MonedaSerializer, SimulacionConversionSerializer, TasaCambioSerializer
 from .services import SimulacionConversionError, simular_conversion
 from clientes.models import CategoriaCliente
+from notificaciones.services import notificar_al_confirmar
 from usuarios.models import UsuarioCliente
 
 class MonedaListView(generics.ListAPIView):
@@ -465,6 +466,7 @@ class TasaCambioEditarView(AnalistaCambiarioRequiredMixin, View):
                 precio_venta_nuevo=nueva_tasa.precio_venta,
                 realizado_por=usuario,
             )
+            notificar_al_confirmar(nueva_tasa)
 
         messages.success(request, "Tasa de cambio modificada correctamente.")
         return redirect("cotizacion-web-list")
@@ -519,6 +521,7 @@ class TasaCambioCrearView(AnalistaCambiarioRequiredMixin, FormView):
             precio_venta_nuevo=nueva_tasa.precio_venta,
             realizado_por=usuario,
         )
+        notificar_al_confirmar(nueva_tasa)
 
         messages.success(self.request, "Tasa de cambio creada correctamente.")
         return super().form_valid(form)

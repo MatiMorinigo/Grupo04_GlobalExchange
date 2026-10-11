@@ -1,6 +1,10 @@
 from django.contrib import admin
 
+from notificaciones.services import notificar_al_confirmar
+
 from .models import AuditoriaMoneda, AuditoriaTasaCambio, Moneda, TasaCambio
+
+CAMPOS_NOTIFICABLES = {"precio_compra", "precio_venta", "vigente"}
 
 
 @admin.register(Moneda)
@@ -58,6 +62,19 @@ class TasaCambioAdmin(admin.ModelAdmin):
     )
     list_filter = ("vigente", "moneda_origen", "moneda_destino")
     search_fields = ("moneda_origen__codigo", "moneda_destino__codigo")
+
+    def save_model(self, request, obj, form, change):
+        """Guarda la tasa y notifica a los usuarios si se publicaron nuevos valores.
+
+        Args:
+            request (django.http.HttpRequest): Solicitud administrativa actual.
+            obj (TasaCambio): Tasa que se está guardando.
+            form (django.forms.ModelForm): Formulario con los campos modificados.
+            change (bool): True si se edita una tasa existente.
+        """
+        super().save_model(request, obj, form, change)
+        if obj.vigente and CAMPOS_NOTIFICABLES.intersection(form.changed_data):
+            notificar_al_confirmar(obj)
 
 
 @admin.register(AuditoriaTasaCambio)
