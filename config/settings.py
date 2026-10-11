@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "pagos",
     "transacciones",
     "usuarios",
+    "cajas.apps.CajasConfig",
 ]
 
 MIDDLEWARE = [

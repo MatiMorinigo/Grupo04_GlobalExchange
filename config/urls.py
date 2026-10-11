@@ -50,4 +50,5 @@ urlpatterns = [
     path("oidc/", include("mozilla_django_oidc.urls")),
     path("logout/", custom_logout, name="logout"),
     path("verificacion-fallida/", verificacion_fallida, name="verificacion_fallida"),
+    path("cajas/", include("cajas.web_urls")),
 ]

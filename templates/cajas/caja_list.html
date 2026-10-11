@@ -1,0 +1,110 @@
+
+{% extends "base.html" %}
+
+{% block title %}Cajas | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Gestión de cajas</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'home' %}">Inicio</a>
+                    </li>
+                    <li class="breadcrumb-item active">Cajas</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card card-primary card-outline">
+
+    <div class="card-header d-flex align-items-center justify-content-between">
+        <h3 class="card-title mb-0">Cajas registradas</h3>
+
+        <a href="{% url 'caja-create' %}"
+           class="btn btn-primary ms-auto">
+            Nueva caja
+        </a>
+    </div>
+
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombre</th>
+                        <th>Sucursal</th>
+                        <th>Estado</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for caja in cajas %}
+                    <tr>
+                        <td>{{ caja.codigo }}</td>
+                        <td>{{ caja.nombre }}</td>
+                        <td>{{ caja.sucursal.nombre }}</td>
+
+                        <td>
+                            {% if caja.activa %}
+                                <span class="badge text-bg-success">Activa</span>
+                            {% else %}
+                                <span class="badge text-bg-secondary">Inactiva</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-center">
+                            <a href="{% url 'caja-update' caja.id_caja %}"
+                               class="btn btn-sm btn-outline-primary">
+                                Editar
+                            </a>
+
+                            {% if caja.activa %}
+                            <form method="post"
+                                  action="{% url 'caja-deactivate' caja.id_caja %}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('¿Deshabilitar esta caja?');">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        class="btn btn-sm btn-outline-danger">
+                                    Deshabilitar
+                                </button>
+                            </form>
+                            {% else %}
+                            <form method="post"
+                                  action="{% url 'caja-activate' caja.id_caja %}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('¿Habilitar esta caja?');">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        class="btn btn-sm btn-outline-success">
+                                    Habilitar
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center text-secondary">
+                            No hay cajas registradas.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
