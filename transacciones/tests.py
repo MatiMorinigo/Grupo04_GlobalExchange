@@ -1,9 +1,13 @@
 from datetime import timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import stripe
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.db.models import BigAutoField
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -26,16 +30,21 @@ from pagos.models import MetodoPago, TipoMetodoPago
 from usuarios.models import UsuarioCliente
 
 from .models import (
+    EstadoPago,
     EstadoTransaccion,
     EtapaCancelacion,
+    Pago,
+    ProveedorPago,
     TipoOperacion,
     Transaccion,
 )
 from .services import (
     OperacionCambiariaError,
+    PagoNoIniciableError,
     calcular_compra,
     crear_transaccion_compra,
     calcular_venta,
+    iniciar_pago,
 )
 
 
@@ -1289,3 +1298,444 @@ class CalculoVentaVIPTemporalTests(TestCase):
             calculo["total_pyg"],
             Decimal("756000.00"),
         )
+
+
+CREAR_PAYMENT_INTENT = "integrations.proveedores_pago.stripe_proveedor.stripe.PaymentIntent.create"
+
+
+def _intento_aceptado(id_intento="pi_aceptado"):
+    """Simula el PaymentIntent que Stripe devuelve al aceptar un cobro."""
+
+    return SimpleNamespace(id=id_intento, status="succeeded")
+
+
+def _rechazo_tarjeta(id_intento="pi_rechazado"):
+    """Simula el error que Stripe lanza al rechazar una tarjeta."""
+
+    cuerpo = {
+        "error": {
+            "type": "card_error",
+            "code": "card_declined",
+            "decline_code": "generic_decline",
+            "message": "Your card was declined.",
+            "payment_intent": {"id": id_intento, "object": "payment_intent"},
+        }
+    }
+    return stripe.CardError("Your card was declined.", None, "card_declined", json_body=cuerpo)
+
+
+class PagoTestMixin:
+    """Prepara un cliente con tarjeta, billetera y operaciones para pagar."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="pagador", password="testpass123")
+        self.cliente = Cliente.objects.create(
+            ruc="80000401-1",
+            nombre="Cliente Pagador",
+            categoria=CategoriaCliente.MINORISTA,
+            tipo=TipoCliente.FISICA,
+        )
+        self.otro_cliente = Cliente.objects.create(
+            ruc="80000402-2",
+            nombre="Cliente Ajeno",
+            categoria=CategoriaCliente.MINORISTA,
+            tipo=TipoCliente.FISICA,
+        )
+        self.perfil = UsuarioCliente.objects.create(usuario=self.user, cliente_activo=self.cliente)
+        self.pyg = Moneda.objects.get(codigo="PYG")
+        self.usd = Moneda.objects.get(codigo="USD")
+        self.tasa = TasaCambio.objects.create(
+            moneda_origen=self.usd,
+            moneda_destino=self.pyg,
+            precio_compra=Decimal("7200.0000"),
+            precio_venta=Decimal("7350.0000"),
+            vigente=True,
+        )
+        self.tarjeta = self._crear_metodo(self.cliente)
+        self.billetera = self._crear_metodo(
+            self.cliente,
+            tipo=TipoMetodoPago.BILLETERA_ELECTRONICA,
+            ultimos_cuatro_digitos="",
+            fecha_vencimiento="",
+            stripe_payment_method_id="",
+            proveedor_billetera="Tigo Money",
+            numero_billetera="0981123456",
+        )
+
+    def _crear_metodo(self, cliente, **cambios):
+        """Crea un método de pago activo; por defecto una tarjeta de prueba aprobada."""
+
+        datos = {
+            "cliente": cliente,
+            "tipo": TipoMetodoPago.TARJETA_CREDITO,
+            "titular": "Titular de prueba",
+            "ultimos_cuatro_digitos": "4242",
+            "fecha_vencimiento": "12/30",
+            "stripe_payment_method_id": "pm_card_visa",
+            "activo": True,
+        }
+        datos.update(cambios)
+        return MetodoPago.objects.create(**datos)
+
+    def _crear_transaccion(
+        self,
+        tipo=TipoOperacion.COMPRA,
+        estado=EstadoTransaccion.PENDIENTE,
+        metodo_pago=None,
+        cliente=None,
+    ):
+        """Crea una operación válida de 100 USD con el método de pago indicado."""
+
+        cliente = cliente or self.cliente
+        if metodo_pago is None and cliente == self.cliente:
+            metodo_pago = self.tarjeta
+        es_compra = tipo == TipoOperacion.COMPRA
+        subtotal = Decimal("735000.00") if es_compra else Decimal("720000.00")
+        comision = Decimal("7350.00") if es_compra else Decimal("7200.00")
+        ahora = timezone.now()
+        transaccion = Transaccion(
+            cliente=cliente,
+            creada_por=self.user,
+            tipo_operacion=tipo,
+            moneda=self.usd,
+            tasa_cambio=self.tasa,
+            tasa_aplicada=self.tasa.precio_venta if es_compra else self.tasa.precio_compra,
+            fecha_vigencia_tasa=self.tasa.fecha_vigencia,
+            metodo_pago=metodo_pago,
+            monto_divisa=Decimal("100.00"),
+            subtotal_pyg=subtotal,
+            categoria_aplicada=cliente.categoria,
+            comision_porcentaje=Decimal("1.00"),
+            comision_monto_pyg=comision,
+            total_pyg=subtotal + comision if es_compra else subtotal - comision,
+            estado=estado,
+            cancelada_en=ahora if estado == EstadoTransaccion.CANCELADA else None,
+            etapa_cancelacion=(
+                EtapaCancelacion.PREVIA_PAGO if estado == EstadoTransaccion.CANCELADA else None
+            ),
+            completada_en=(
+                ahora
+                if estado in (EstadoTransaccion.COMPLETADA, EstadoTransaccion.ANULADA)
+                else None
+            ),
+        )
+        transaccion.full_clean()
+        transaccion.save()
+        return transaccion
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_dummy")
+class IniciarPagoServicioTests(PagoTestMixin, TestCase):
+    """Prueba los criterios de aceptación de HU-15 sobre el servicio de pago."""
+
+    def test_compra_con_tarjeta_registra_pago_en_proceso_sin_completar_la_operacion(self):
+        transaccion = self._crear_transaccion()
+
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_compra")) as crear:
+            pago = iniciar_pago(transaccion, self.user)
+
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+        self.assertEqual(pago.proveedor, ProveedorPago.STRIPE)
+        self.assertEqual(pago.referencia_externa, "pi_compra")
+        self.assertEqual(pago.monto, Decimal("742350.00"))
+        self.assertEqual(pago.moneda_id, "PYG")
+        self.assertEqual(pago.metodo_pago, self.tarjeta)
+        self.assertEqual(pago.iniciado_por, self.user)
+        self.assertEqual(crear.call_args.kwargs["amount"], 742350)
+        self.assertEqual(crear.call_args.kwargs["currency"], "pyg")
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
+        self.assertIsNone(transaccion.completada_en)
+
+    def test_total_con_decimales_se_cobra_en_guaranies_enteros(self):
+        transaccion = self._crear_transaccion()
+        Transaccion.objects.filter(pk=transaccion.pk).update(total_pyg=Decimal("742350.50"))
+
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado()) as crear:
+            pago = iniciar_pago(transaccion, self.user)
+
+        self.assertEqual(pago.monto, Decimal("742351.00"))
+        self.assertEqual(crear.call_args.kwargs["amount"], 742351)
+
+    def test_venta_con_tarjeta_cobra_la_divisa_entregada(self):
+        transaccion = self._crear_transaccion(tipo=TipoOperacion.VENTA)
+
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_venta")) as crear:
+            pago = iniciar_pago(transaccion, self.user)
+
+        self.assertEqual(pago.monto, Decimal("100.00"))
+        self.assertEqual(pago.moneda_id, "USD")
+        self.assertEqual(crear.call_args.kwargs["amount"], 10000)
+        self.assertEqual(crear.call_args.kwargs["currency"], "usd")
+
+    def test_compra_con_billetera_usa_el_simulador(self):
+        transaccion = self._crear_transaccion(metodo_pago=self.billetera)
+
+        with patch(CREAR_PAYMENT_INTENT) as crear:
+            pago = iniciar_pago(transaccion, self.user)
+
+        crear.assert_not_called()
+        self.assertEqual(pago.proveedor, ProveedorPago.SIMULADOR_BILLETERA)
+        self.assertTrue(pago.referencia_externa.startswith("SIM-"))
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+        self.assertEqual(pago.moneda_id, "PYG")
+
+    def test_venta_con_billetera_cobra_la_divisa_en_el_simulador(self):
+        transaccion = self._crear_transaccion(tipo=TipoOperacion.VENTA, metodo_pago=self.billetera)
+
+        pago = iniciar_pago(transaccion, self.user)
+
+        self.assertEqual(pago.proveedor, ProveedorPago.SIMULADOR_BILLETERA)
+        self.assertEqual(pago.monto, Decimal("100.00"))
+        self.assertEqual(pago.moneda_id, "USD")
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
+
+    def test_solo_se_pagan_operaciones_pendientes(self):
+        for estado in (
+            EstadoTransaccion.COMPLETADA,
+            EstadoTransaccion.CANCELADA,
+            EstadoTransaccion.ANULADA,
+        ):
+            with self.subTest(estado=estado):
+                transaccion = self._crear_transaccion(estado=estado)
+
+                with patch(CREAR_PAYMENT_INTENT) as crear:
+                    with self.assertRaisesMessage(PagoNoIniciableError, "estado pendiente"):
+                        iniciar_pago(transaccion, self.user)
+
+                crear.assert_not_called()
+                self.assertFalse(transaccion.pagos.exists())
+
+    def test_metodo_inactivo_no_permite_iniciar_el_pago(self):
+        transaccion = self._crear_transaccion()
+        self.tarjeta.activo = False
+        self.tarjeta.save(update_fields=["activo"])
+
+        with patch(CREAR_PAYMENT_INTENT) as crear:
+            with self.assertRaisesMessage(PagoNoIniciableError, "método de pago activo"):
+                iniciar_pago(transaccion, self.user)
+
+        crear.assert_not_called()
+        self.assertFalse(Pago.objects.exists())
+
+    def test_operacion_sin_metodo_no_permite_iniciar_el_pago(self):
+        transaccion = self._crear_transaccion()
+        Transaccion.objects.filter(pk=transaccion.pk).update(metodo_pago=None)
+
+        with self.assertRaisesMessage(PagoNoIniciableError, "método de pago activo"):
+            iniciar_pago(transaccion, self.user)
+
+        self.assertFalse(Pago.objects.exists())
+
+    def test_tarjeta_sin_token_no_esta_habilitada(self):
+        tarjeta = self._crear_metodo(
+            self.cliente, ultimos_cuatro_digitos="4444", stripe_payment_method_id=""
+        )
+        transaccion = self._crear_transaccion(metodo_pago=tarjeta)
+
+        with patch(CREAR_PAYMENT_INTENT) as crear:
+            with self.assertRaisesMessage(PagoNoIniciableError, "no está habilitada"):
+                iniciar_pago(transaccion, self.user)
+
+        crear.assert_not_called()
+        self.assertFalse(Pago.objects.exists())
+
+    def test_rechazo_del_proveedor_registra_la_referencia_y_no_completa(self):
+        transaccion = self._crear_transaccion()
+
+        with patch(CREAR_PAYMENT_INTENT, side_effect=_rechazo_tarjeta("pi_rechazado")):
+            with self.assertRaisesMessage(PagoNoIniciableError, "rechazada por el emisor"):
+                iniciar_pago(transaccion, self.user)
+
+        pago = transaccion.pagos.get()
+        self.assertEqual(pago.estado, EstadoPago.RECHAZADO)
+        self.assertEqual(pago.referencia_externa, "pi_rechazado")
+        self.assertIn("card_declined", pago.mensaje_proveedor)
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
+        self.assertIsNone(transaccion.completada_en)
+
+    def test_falla_de_comunicacion_registra_error_y_no_completa(self):
+        transaccion = self._crear_transaccion()
+
+        with patch(CREAR_PAYMENT_INTENT, side_effect=stripe.APIConnectionError("timeout")):
+            with self.assertRaisesMessage(PagoNoIniciableError, "No pudimos comunicarnos"):
+                iniciar_pago(transaccion, self.user)
+
+        pago = transaccion.pagos.get()
+        self.assertEqual(pago.estado, EstadoPago.ERROR)
+        self.assertIsNone(pago.referencia_externa)
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
+
+    def test_no_se_inicia_un_segundo_pago_mientras_otro_esta_en_proceso(self):
+        transaccion = self._crear_transaccion()
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_primero")):
+            iniciar_pago(transaccion, self.user)
+
+        with patch(CREAR_PAYMENT_INTENT) as crear:
+            with self.assertRaisesMessage(PagoNoIniciableError, "Ya hay un pago en proceso"):
+                iniciar_pago(transaccion, self.user)
+
+        crear.assert_not_called()
+        self.assertEqual(transaccion.pagos.count(), 1)
+
+    def test_se_puede_reintentar_despues_de_un_rechazo(self):
+        transaccion = self._crear_transaccion()
+        with patch(CREAR_PAYMENT_INTENT, side_effect=_rechazo_tarjeta("pi_rechazado")):
+            with self.assertRaises(PagoNoIniciableError):
+                iniciar_pago(transaccion, self.user)
+
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_reintento")):
+            pago = iniciar_pago(transaccion, self.user)
+
+        self.assertEqual(pago.referencia_externa, "pi_reintento")
+        self.assertEqual(transaccion.pagos.count(), 2)
+
+    def test_la_base_impide_dos_pagos_activos_para_la_misma_operacion(self):
+        transaccion = self._crear_transaccion()
+        datos = {
+            "transaccion": transaccion,
+            "proveedor": ProveedorPago.STRIPE,
+            "monto": Decimal("1000.00"),
+            "moneda": self.pyg,
+            "estado": EstadoPago.EN_PROCESO,
+        }
+        Pago.objects.create(referencia_externa="pi_uno", **datos)
+
+        with self.assertRaises(IntegrityError):
+            Pago.objects.create(referencia_externa="pi_dos", **datos)
+
+
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC, STRIPE_SECRET_KEY="sk_test_dummy")
+class IniciarPagoWebTests(PagoTestMixin, TestCase):
+    """Prueba la acción web de pago y su presentación en el detalle."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+
+    def _roles(self, *roles_permitidos):
+        """Simula los roles de Keycloak necesarios para cada prueba."""
+
+        return patch(
+            "transacciones.views.tiene_rol",
+            side_effect=lambda request, rol: rol in roles_permitidos,
+        )
+
+    def _pagar(self, transaccion):
+        return self.client.post(
+            reverse("transaccion-web-iniciar-pago", args=[transaccion.id_transaccion]),
+            HTTP_HOST="127.0.0.1",
+        )
+
+    def _detalle(self, transaccion, *roles):
+        with self._roles(*roles):
+            return self.client.get(
+                reverse("transaccion-web-detail", args=[transaccion.id_transaccion]),
+                HTTP_HOST="127.0.0.1",
+            )
+
+    def _mensajes(self, response):
+        return [str(mensaje) for mensaje in response.wsgi_request._messages]
+
+    def test_pago_iniciado_redirige_al_detalle_con_la_referencia(self):
+        transaccion = self._crear_transaccion()
+
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_web")):
+            response = self._pagar(transaccion)
+
+        self.assertRedirects(
+            response,
+            reverse("transaccion-web-detail", args=[transaccion.id_transaccion]),
+            fetch_redirect_response=False,
+        )
+        self.assertTrue(any("pi_web" in mensaje for mensaje in self._mensajes(response)))
+
+    def test_rechazo_informa_al_usuario(self):
+        transaccion = self._crear_transaccion()
+
+        with patch(CREAR_PAYMENT_INTENT, side_effect=_rechazo_tarjeta()):
+            response = self._pagar(transaccion)
+
+        self.assertTrue(
+            any(
+                "No se pudo iniciar el pago" in mensaje and "rechazada" in mensaje
+                for mensaje in self._mensajes(response)
+            )
+        )
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
+
+    def test_no_permite_pagar_operaciones_de_otro_cliente(self):
+        ajena = self._crear_transaccion(
+            cliente=self.otro_cliente,
+            metodo_pago=self._crear_metodo(self.otro_cliente),
+        )
+
+        with self._roles("administrador"), patch(CREAR_PAYMENT_INTENT) as crear:
+            response = self._pagar(ajena)
+
+        self.assertEqual(response.status_code, 404)
+        crear.assert_not_called()
+        self.assertFalse(Pago.objects.exists())
+
+    def test_solo_acepta_post(self):
+        transaccion = self._crear_transaccion()
+
+        response = self.client.get(
+            reverse("transaccion-web-iniciar-pago", args=[transaccion.id_transaccion]),
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 405)
+
+    def test_usuario_anonimo_es_redirigido_al_login(self):
+        transaccion = self._crear_transaccion()
+        self.client.logout()
+
+        response = self._pagar(transaccion)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Pago.objects.exists())
+
+    def test_detalle_muestra_el_boton_de_pago_si_esta_pendiente(self):
+        transaccion = self._crear_transaccion()
+
+        response = self._detalle(transaccion)
+
+        self.assertTrue(response.context["puede_iniciar_pago"])
+        self.assertContains(
+            response,
+            reverse("transaccion-web-iniciar-pago", args=[transaccion.id_transaccion]),
+        )
+
+    def test_detalle_oculta_el_boton_y_muestra_la_referencia_con_pago_en_proceso(self):
+        transaccion = self._crear_transaccion()
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_en_proceso")):
+            iniciar_pago(transaccion, self.user)
+
+        response = self._detalle(transaccion)
+
+        self.assertFalse(response.context["puede_iniciar_pago"])
+        self.assertContains(response, "pi_en_proceso")
+        self.assertContains(response, "Pago en proceso")
+
+    def test_detalle_no_ofrece_pagar_una_operacion_completada(self):
+        transaccion = self._crear_transaccion(estado=EstadoTransaccion.COMPLETADA)
+
+        response = self._detalle(transaccion)
+
+        self.assertFalse(response.context["puede_iniciar_pago"])
+
+    def test_detalle_no_ofrece_pagar_una_operacion_ajena_al_administrador(self):
+        ajena = self._crear_transaccion(
+            cliente=self.otro_cliente,
+            metodo_pago=self._crear_metodo(self.otro_cliente),
+        )
+
+        response = self._detalle(ajena, "administrador")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["puede_iniciar_pago"])
