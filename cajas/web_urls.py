@@ -10,6 +10,8 @@ from .views import (
     CajaCreateView,
     CajaUpdateView,
     CajaEstadoView,
+    AsignacionCajaListView,
+    AsignacionCajaCreateView,
 )
 
 urlpatterns = [
@@ -50,5 +52,15 @@ urlpatterns = [
         "sucursales/<int:id_sucursal>/desactivar/",
         SucursalDeactivateView.as_view(),
         name="sucursal-deactivate",
+    ),
+    path(
+        "asignaciones/",
+        AsignacionCajaListView.as_view(),
+        name="asignacion-list"
+    ),
+    path(
+        "asignaciones/nueva/",
+        AsignacionCajaCreateView.as_view(),
+        name="asignacion-create"
     ),
 ]

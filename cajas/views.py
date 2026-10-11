@@ -13,6 +13,12 @@ from .models import Caja
 from .forms import CajaForm
 from .mixins import AdminOTesoreroRequiredMixin
 
+from .models import AsignacionCaja
+from .forms import AsignacionCajaForm
+
+from django.db import IntegrityError, transaction
+
+
 class SucursalListView(AdminRequiredMixin, ListView):
     """Muestra las sucursales registradas."""
 
@@ -209,3 +215,76 @@ class CajaEstadoView(AdminOTesoreroRequiredMixin, View):
         messages.success(request, mensaje)
 
         return redirect("caja-list")
+
+
+class AsignacionCajaListView(AdminOTesoreroRequiredMixin, ListView):
+    model = AsignacionCaja
+    template_name = "cajas/asignacion_list.html"
+    context_object_name = "asignaciones"
+
+    def get_queryset(self):
+        return AsignacionCaja.objects.select_related(
+            "caja__sucursal",
+            "asignado_por"
+        ).order_by("-fecha_inicio")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cajas"
+        return context
+
+
+class AsignacionCajaCreateView(AdminOTesoreroRequiredMixin, CreateView):
+    model = AsignacionCaja
+    form_class = AsignacionCajaForm
+    template_name = "cajas/asignacion_form.html"
+    success_url = reverse_lazy("asignacion-list")
+
+
+    def form_valid(self, form):
+        form.instance.asignado_por = self.request.user
+
+        form.instance.cajero_username = (
+            form.cajero_verificado["username"]
+        )
+
+        try:
+            with transaction.atomic():
+                respuesta = super().form_valid(form)
+
+        except IntegrityError as error:
+            restriccion = getattr(
+                getattr(error.__cause__, "diag", None),
+                "constraint_name",
+                None
+            )
+
+            if restriccion not in {
+                "no_superposicion_por_caja",
+                "no_superposicion_por_cajero",
+            }:
+                raise
+
+            form.add_error(
+                None,
+                "No se pudo registrar la asignación porque "
+                "el cajero o la caja ya tienen un turno "
+                "superpuesto."
+            )
+
+            return self.form_invalid(form)
+
+        messages.success(
+            self.request,
+            "Cajero asignado correctamente."
+        )
+
+        return respuesta
+
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cajas"
+        context["page_title"] = "Nueva asignación de cajero"
+        return context
+
