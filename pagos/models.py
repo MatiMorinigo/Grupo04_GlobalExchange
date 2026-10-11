@@ -21,7 +21,8 @@ class MetodoPago(models.Model):
 
     Por seguridad, nunca se almacena el número completo de la tarjeta ni el
     código de seguridad (CVV): solo se conservan los últimos cuatro dígitos,
-    suficientes para identificar la tarjeta ante el usuario.
+    suficientes para identificar la tarjeta ante el usuario. Para pagar en
+    línea se guarda, si corresponde, el token de Stripe asociado a la tarjeta.
     """
     id_metodo_pago = models.BigAutoField(primary_key=True)
     cliente = models.ForeignKey(
@@ -45,6 +46,13 @@ class MetodoPago(models.Model):
     numero_billetera = models.CharField(
         max_length=20, blank=True, verbose_name="Celular asociado",
         validators=[validar_numero_billetera],
+    )
+    stripe_payment_method_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Medio de pago en Stripe",
+        help_text="Token pm_card_* de Stripe en modo test; nunca un número de tarjeta.",
     )
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(auto_now_add=True, verbose_name="Creado el")
@@ -85,6 +93,7 @@ class MetodoPago(models.Model):
                     errores["numero_billetera"] = error.messages
             self.ultimos_cuatro_digitos = ""
             self.fecha_vencimiento = ""
+            self.stripe_payment_method_id = ""
         else:
             if not self.fecha_vencimiento:
                 errores["fecha_vencimiento"] = "El vencimiento es obligatorio."

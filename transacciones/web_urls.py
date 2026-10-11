@@ -4,6 +4,7 @@ from .views import (
     CompraDivisaWebCreateView,
     TransaccionComprobanteView,
     TransaccionHistorialView,
+    TransaccionIniciarPagoView,
     TransaccionWebDetailView,
     VentaDivisaWebCreateView,
 )
@@ -26,5 +27,10 @@ urlpatterns = [
         "<int:id_transaccion>/comprobante/",
         TransaccionComprobanteView.as_view(),
         name="transaccion-web-comprobante",
+    ),
+    path(
+        "<int:id_transaccion>/pagar/",
+        TransaccionIniciarPagoView.as_view(),
+        name="transaccion-web-iniciar-pago",
     ),
 ]

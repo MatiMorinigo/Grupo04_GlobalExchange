@@ -17,7 +17,13 @@
             La operación {{ transaccion.id_transaccion }} está en estado
             {{ transaccion.get_estado_display|upper }}.
         </strong>
-        {% if transaccion.estado == "PENDIENTE" %}
+        {% if transaccion.estado == "PENDIENTE" and pago_activo %}
+        <div class="mt-1">
+            Pago en proceso con {{ pago_activo.get_proveedor_display }}
+            (referencia {{ pago_activo.referencia_externa|default:"en trámite" }}).
+            La operación se completará cuando el proveedor confirme el pago.
+        </div>
+        {% elif transaccion.estado == "PENDIENTE" %}
         <div class="mt-1">
             {% if transaccion.tipo_operacion == "COMPRA" %}
             Todavía no fue abonada. Podés completar el pago más adelante desde
@@ -175,7 +181,107 @@
         </div>
     </div>
 
+    {% if pagos %}
+    <div class="card card-primary card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Pagos de la operación</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Proveedor</th>
+                            <th>Método</th>
+                            <th>Monto</th>
+                            <th>Referencia</th>
+                            <th>Estado</th>
+                            <th>Detalle</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pago in pagos %}
+                        <tr>
+                            <td>{{ pago.creado_en }}</td>
+                            <td>{{ pago.get_proveedor_display }}</td>
+                            <td>
+                                {% if pago.metodo_pago %}
+                                {{ pago.metodo_pago.get_tipo_display }} · {{ pago.metodo_pago.identificacion }}
+                                {% else %}
+                                Sin definir
+                                {% endif %}
+                            </td>
+                            <td>{{ pago.monto|formato_numero:2 }} {{ pago.moneda_id }}</td>
+                            <td><code>{{ pago.referencia_externa|default:"—" }}</code></td>
+                            <td>
+                                <span class="badge {% if pago.estado == 'EN_PROCESO' or pago.estado == 'INICIADO' %}text-bg-warning{% elif pago.estado == 'RECHAZADO' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">
+                                    {{ pago.get_estado_display }}
+                                </span>
+                            </td>
+                            <td>{{ pago.mensaje_proveedor|default:"—" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if puede_iniciar_pago and puede_cambiar_metodo %}
+    <div class="card card-warning card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Reintentar el pago</h2>
+        </div>
+        <div class="card-body">
+            <p class="mb-3">
+                {% if pagos %}
+                El intento anterior no se completó. Podés volver a intentarlo
+                con el mismo método o elegir otro de tus métodos de pago.
+                {% else %}
+                El método de pago de esta operación no permite iniciar el pago.
+                Elegí otro de tus métodos de pago para continuar.
+                {% endif %}
+            </p>
+            <form method="post" action="{% url 'transaccion-web-iniciar-pago' transaccion.id_transaccion %}"
+                class="row g-2 align-items-end">
+                {% csrf_token %}
+                <div class="col-12 col-md-7">
+                    <label for="metodo_pago" class="form-label">Pagar con</label>
+                    <select name="metodo_pago" id="metodo_pago" class="form-select">
+                        {% for metodo in metodos_disponibles %}
+                        <option value="{{ metodo.id_metodo_pago }}"
+                            {% if metodo.id_metodo_pago == transaccion.metodo_pago_id %}selected{% endif %}>
+                            {{ metodo.get_tipo_display }} · {{ metodo.identificacion }}
+                            {% if metodo.id_metodo_pago == transaccion.metodo_pago_id %}(método actual){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-auto">
+                    <button type="submit" class="btn btn-success" onclick="this.disabled=true;this.form.submit();">
+                        <i class="bi bi-credit-card" aria-hidden="true"></i>
+                        Pagar {{ monto_pago|formato_numero:2 }} {{ moneda_pago }}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="mt-4 d-flex flex-wrap gap-2">
+        {% if puede_iniciar_pago and not puede_cambiar_metodo %}
+        <form method="post" action="{% url 'transaccion-web-iniciar-pago' transaccion.id_transaccion %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success" onclick="this.disabled=true;this.form.submit();">
+                <i class="bi bi-credit-card" aria-hidden="true"></i>
+                Pagar {{ monto_pago|formato_numero:2 }} {{ moneda_pago }}
+                {% if transaccion.metodo_pago %}con {{ transaccion.metodo_pago.identificacion }}{% endif %}
+            </button>
+        </form>
+        {% endif %}
+
         <a href="{% url 'transaccion-web-comprobante' transaccion.id_transaccion %}" class="btn btn-primary">
             Descargar comprobante
         </a>
@@ -198,4 +304,4 @@
         </a>
     </div>
 </div>
-{% endblock %}c
+{% endblock %}

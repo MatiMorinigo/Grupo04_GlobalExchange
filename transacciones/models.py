@@ -413,3 +413,136 @@ class Transaccion(models.Model):
             f"Transaccion {self.id_transaccion} - "
             f"{self.get_tipo_operacion_display()} {self.moneda_id}"
         )
+
+
+class ProveedorPago(models.TextChoices):
+    """Identifica el proveedor externo que procesa un pago."""
+
+    STRIPE = "STRIPE", "Stripe"
+    SIMULADOR_BILLETERA = "SIMULADOR_BILLETERA", "Simulador de billetera"
+
+
+class EstadoPago(models.TextChoices):
+    """Define las etapas de un intento de pago ante el proveedor externo."""
+
+    INICIADO = "INICIADO", "Iniciado"
+    EN_PROCESO = "EN_PROCESO", "En proceso"
+    RECHAZADO = "RECHAZADO", "Rechazado"
+    ERROR = "ERROR", "Error"
+
+
+ESTADOS_PAGO_ACTIVOS = (EstadoPago.INICIADO, EstadoPago.EN_PROCESO)
+"""tuple[str, ...]: Estados de un pago que todavia espera una respuesta final.
+
+Una transaccion solo puede tener un pago en alguno de estos estados.
+"""
+
+
+class Pago(models.Model):
+    """Registra cada intento de pago de una transaccion ante un proveedor externo.
+
+    El pago guarda la referencia que devuelve el proveedor (por ejemplo, el
+    identificador del PaymentIntent de Stripe) para poder identificarlo cuando
+    llegue su confirmacion. Iniciar un pago nunca completa la transaccion: un
+    pago ``EN_PROCESO`` solo indica que el proveedor acepto la solicitud.
+    Despues de un rechazo o un error se puede reintentar con un pago nuevo,
+    por lo que una transaccion conserva el historial de sus intentos.
+    """
+
+    id_pago = models.BigAutoField(primary_key=True)
+    transaccion = models.ForeignKey(
+        Transaccion,
+        on_delete=models.PROTECT,
+        related_name="pagos",
+        verbose_name="Transaccion",
+    )
+    metodo_pago = models.ForeignKey(
+        "pagos.MetodoPago",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pagos",
+        verbose_name="Metodo de pago",
+    )
+    proveedor = models.CharField(
+        max_length=30,
+        choices=ProveedorPago.choices,
+        verbose_name="Proveedor",
+    )
+    referencia_externa = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+        verbose_name="Referencia externa",
+    )
+    estado = models.CharField(
+        max_length=12,
+        choices=EstadoPago.choices,
+        default=EstadoPago.INICIADO,
+        verbose_name="Estado",
+    )
+    monto = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        verbose_name="Monto cobrado",
+    )
+    moneda = models.ForeignKey(
+        Moneda,
+        on_delete=models.PROTECT,
+        related_name="pagos",
+        verbose_name="Moneda cobrada",
+    )
+    mensaje_proveedor = models.TextField(
+        blank=True,
+        verbose_name="Mensaje del proveedor",
+    )
+    iniciado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pagos_iniciados",
+        verbose_name="Iniciado por",
+    )
+    creado_en = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Creado el",
+    )
+    actualizado_en = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Ultima actualizacion",
+    )
+
+    class Meta:
+        """Define orden, presentacion e integridad de los pagos."""
+
+        ordering = ["-creado_en"]
+        verbose_name = "Pago"
+        verbose_name_plural = "Pagos"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["transaccion"],
+                condition=Q(estado__in=ESTADOS_PAGO_ACTIVOS),
+                name="pago_un_activo_por_transaccion",
+            ),
+            models.CheckConstraint(
+                condition=Q(monto__gt=0),
+                name="pago_monto_positivo",
+            ),
+        ]
+
+    @property
+    def activo(self):
+        """Indica si el pago todavia espera una respuesta final del proveedor."""
+
+        return self.estado in ESTADOS_PAGO_ACTIVOS
+
+    def __str__(self):
+        """Devuelve una etiqueta breve para listados administrativos."""
+
+        return (
+            f"Pago {self.id_pago} - Transaccion {self.transaccion_id} "
+            f"({self.get_estado_display()})"
+        )

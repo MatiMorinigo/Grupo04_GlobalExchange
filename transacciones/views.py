@@ -2,21 +2,27 @@ from functools import cached_property
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect
+from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from core.keycloak import tiene_rol
 from core.mixins import ClienteActivoRequiredMixin
+from pagos.models import MetodoPago
 from usuarios.models import obtener_cliente_activo
 
 from .forms import CompraDivisaForm, HistorialTransaccionFiltroForm, VentaDivisaForm
-from .models import Transaccion
+from .models import ESTADOS_PAGO_ACTIVOS, EstadoPago, EstadoTransaccion, Transaccion
 from .services import (
     OperacionCambiariaError,
+    PagoNoIniciableError,
     calcular_compra,
     calcular_venta,
     crear_transaccion_compra,
     crear_transaccion_venta,
+    importe_a_cobrar,
+    iniciar_pago,
+    metodo_permite_pagar,
     obtener_tasa_vigente_compra,
     obtener_tasa_vigente_venta,
 )
@@ -468,14 +474,18 @@ class TransaccionWebDetailView(AccesoHistorialTransaccionMixin, DetailView):
         return super().get_queryset()
 
     def get_context_data(self, **kwargs):
-        """Marca el menú de operaciones como activo según el tipo de la transacción.
+        """Agrega el menú activo y los datos de pago de la transacción.
 
         Args:
             **kwargs: Datos adicionales del contexto de la vista base.
 
         Returns:
-            dict: Contexto con el menú activo seleccionado según el tipo de
-            operación: 'transacciones' para compras y 'venta' para ventas.
+            dict: Contexto con el menú activo según el tipo de operación
+            ('transacciones' para compras y 'venta' para ventas), los pagos
+            registrados, el pago en curso si existe, el importe a pagar, si
+            el usuario puede iniciar el pago y, tras un intento fallido o si
+            el método actual no permite pagar, los métodos entre los que
+            puede elegir.
         """
         context = super().get_context_data(**kwargs)
         transaccion = context["transaccion"]
@@ -483,6 +493,42 @@ class TransaccionWebDetailView(AccesoHistorialTransaccionMixin, DetailView):
             "venta"
             if transaccion.tipo_operacion == "VENTA"
             else "transacciones"
+        )
+
+        pagos = list(transaccion.pagos.select_related("moneda", "metodo_pago"))
+        pago_activo = next((pago for pago in pagos if pago.estado in ESTADOS_PAGO_ACTIVOS), None)
+        monto_pago, moneda_pago = importe_a_cobrar(transaccion)
+        es_cliente_de_la_operacion = (
+            self.cliente_activo is not None
+            and self.cliente_activo.pk == transaccion.cliente_id
+        )
+        puede_iniciar_pago = (
+            transaccion.estado == EstadoTransaccion.PENDIENTE
+            and pago_activo is None
+            and es_cliente_de_la_operacion
+        )
+        # Se ofrece pagar con otro método cuando el intento anterior falló o
+        # cuando el método actual ni siquiera permite iniciar el pago.
+        hubo_intento_fallido = any(
+            pago.estado in (EstadoPago.RECHAZADO, EstadoPago.ERROR) for pago in pagos
+        )
+        metodos_disponibles = []
+        if puede_iniciar_pago and (
+            hubo_intento_fallido or not metodo_permite_pagar(transaccion)
+        ):
+            metodos_disponibles = list(
+                MetodoPago.objects.filter(cliente=self.cliente_activo, activo=True)
+            )
+        context.update(
+            {
+                "pagos": pagos,
+                "pago_activo": pago_activo,
+                "monto_pago": monto_pago,
+                "moneda_pago": moneda_pago,
+                "puede_iniciar_pago": puede_iniciar_pago,
+                "puede_cambiar_metodo": len(metodos_disponibles) > 1,
+                "metodos_disponibles": metodos_disponibles,
+            }
         )
         return context
 
@@ -495,3 +541,62 @@ class TransaccionComprobanteView(TransaccionWebDetailView):
     el navegador.
     """
     template_name = "transacciones/comprobante.html"
+
+
+class TransaccionIniciarPagoView(ClienteActivoRequiredMixin, View):
+    """Inicia el pago de una operación pendiente del cliente activo.
+
+    Solo acepta POST. La transacción se busca dentro del cliente activo del
+    usuario, por lo que nadie puede pagar operaciones de otro cliente, ni
+    siquiera quienes pueden consultarlas en el historial general. El formulario
+    puede incluir ``metodo_pago`` para pagar con otro método activo del
+    cliente, por ejemplo después de un rechazo.
+    """
+
+    http_method_names = ["post"]
+
+    def post(self, request, id_transaccion):
+        """Solicita el pago al proveedor e informa el resultado.
+
+        Args:
+            request (django.http.HttpRequest): Solicitud del cliente.
+            id_transaccion (int): Identificador de la operación a pagar.
+
+        Returns:
+            django.http.HttpResponse: Redirección al detalle de la operación,
+            con un mensaje de éxito o con el motivo por el que no se pudo
+            iniciar el pago.
+        """
+        cliente = obtener_cliente_activo(request.user)
+        transaccion = get_object_or_404(
+            Transaccion,
+            id_transaccion=id_transaccion,
+            cliente=cliente,
+        )
+
+        metodo_pago = None
+        id_metodo = request.POST.get("metodo_pago", "").strip()
+        if id_metodo:
+            if id_metodo.isdigit():
+                metodo_pago = MetodoPago.objects.filter(
+                    pk=int(id_metodo), cliente=cliente, activo=True
+                ).first()
+            if metodo_pago is None:
+                messages.error(
+                    request,
+                    "No se pudo iniciar el pago. El método de pago seleccionado no está disponible.",
+                )
+                return redirect("transaccion-web-detail", id_transaccion=id_transaccion)
+
+        try:
+            pago = iniciar_pago(transaccion, request.user, metodo_pago=metodo_pago)
+        except PagoNoIniciableError as error:
+            messages.error(request, f"No se pudo iniciar el pago. {error}")
+        else:
+            messages.success(
+                request,
+                f"Pago iniciado con {pago.get_proveedor_display()}. "
+                f"Referencia: {pago.referencia_externa}. La operación se completará "
+                "cuando el proveedor confirme el pago.",
+            )
+        return redirect("transaccion-web-detail", id_transaccion=id_transaccion)

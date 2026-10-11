@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.db import IntegrityError
 from django.db import transaction as db_transaction
 
 from cotizaciones.models import ConfiguracionComision, TasaCambio
@@ -8,8 +9,20 @@ from cotizaciones.services import (
     obtener_beneficio_categoria,
     redondear_monto,
 )
+from integrations.proveedores_pago import (
+    MetodoPagoNoHabilitadoError,
+    ProveedorPagoError,
+    get_proveedor,
+)
 
-from .models import TipoOperacion, Transaccion
+from .models import (
+    ESTADOS_PAGO_ACTIVOS,
+    EstadoPago,
+    EstadoTransaccion,
+    Pago,
+    TipoOperacion,
+    Transaccion,
+)
 
 
 
@@ -20,6 +33,17 @@ CIEN = Decimal("100")
 class OperacionCambiariaError(ValueError):
     """Indica que una operación cambiaria no puede calcularse o registrarse."""
     pass
+
+
+class PagoNoIniciableError(OperacionCambiariaError):
+    """Indica que no puede iniciarse el pago de una transacción.
+
+    El mensaje está pensado para mostrarse al cliente tal cual.
+    """
+    pass
+
+
+MENSAJE_PAGO_EN_PROCESO = "Ya hay un pago en proceso para esta operación."
 
 
 def obtener_tasa_vigente_compra(moneda_codigo):
@@ -345,3 +369,139 @@ def crear_transaccion_venta(
         transaccion.save()
 
     return transaccion
+
+
+def importe_a_cobrar(transaccion):
+    """Determina el importe y la moneda que el cliente paga en una operación.
+
+    En una compra el cliente paga el total en guaraníes; en una venta entrega
+    la divisa que vende.
+
+    Args:
+        transaccion (Transaccion): Operación a pagar.
+
+    Returns:
+        tuple[decimal.Decimal, str]: Importe y código de la moneda a cobrar.
+    """
+    if transaccion.tipo_operacion == TipoOperacion.COMPRA:
+        return transaccion.total_pyg, PYG
+    return transaccion.monto_divisa, transaccion.moneda_id
+
+
+def metodo_permite_pagar(transaccion):
+    """Indica si el método de pago actual de la operación permite iniciar el pago.
+
+    Aplica las mismas comprobaciones previas que ``iniciar_pago`` sin crear
+    ningún pago ni contactar al proveedor.
+
+    Args:
+        transaccion (Transaccion): Operación a pagar.
+
+    Returns:
+        bool: False si la operación no tiene método, si está inactivo, si no
+        es del cliente o si el proveedor no lo habilita para este importe.
+    """
+    metodo = transaccion.metodo_pago
+    if metodo is None or not metodo.activo or metodo.cliente_id != transaccion.cliente_id:
+        return False
+    monto, moneda = importe_a_cobrar(transaccion)
+    try:
+        get_proveedor(metodo).validar(metodo, monto, moneda)
+    except MetodoPagoNoHabilitadoError:
+        return False
+    return True
+
+
+def iniciar_pago(transaccion, usuario, metodo_pago=None):
+    """Inicia el pago de una transacción pendiente ante el proveedor externo.
+
+    El proceso tiene dos fases. Primero, con la transacción bloqueada, valida
+    que esté pendiente, que no tenga otro pago en curso y que su método de
+    pago esté habilitado para el proveedor, y registra el pago como
+    ``INICIADO``. Después, fuera de la transacción de base de datos, envía la
+    solicitud al proveedor y guarda su respuesta. Iniciar el pago nunca
+    modifica el estado de la transacción: la confirmación llega más tarde.
+
+    Si se indica un método de pago distinto del de la operación (por ejemplo,
+    después de que el proveedor rechazó la tarjeta), pasa a ser el método de la
+    operación siempre que el pago pueda iniciarse. Los intentos anteriores
+    conservan el método con el que se hicieron.
+
+    Args:
+        transaccion (Transaccion): Operación a pagar.
+        usuario (django.contrib.auth.models.User): Usuario que inicia el pago.
+        metodo_pago (pagos.models.MetodoPago or None): Método con el que se
+            quiere pagar. Si se omite, se usa el de la operación.
+
+    Returns:
+        Pago: Pago ``EN_PROCESO`` con la referencia externa del proveedor.
+
+    Raises:
+        PagoNoIniciableError: Si la transacción no está pendiente, ya tiene
+            un pago en curso, el método elegido no es un método activo del
+            cliente, su método de pago no está habilitado o el proveedor
+            rechazó o no pudo procesar la solicitud. En los dos últimos casos
+            el pago queda registrado como ``RECHAZADO`` o ``ERROR``.
+    """
+    try:
+        with db_transaction.atomic():
+            transaccion = (
+                # Solo se bloquea la transacción: PostgreSQL no admite FOR UPDATE
+                # sobre el método de pago, que es el lado nulable del JOIN.
+                Transaccion.objects.select_for_update(of=("self",))
+                .select_related("metodo_pago")
+                .get(pk=transaccion.pk)
+            )
+            if transaccion.estado != EstadoTransaccion.PENDIENTE:
+                raise PagoNoIniciableError(
+                    "Solo se pueden pagar operaciones en estado pendiente."
+                )
+            if transaccion.pagos.filter(estado__in=ESTADOS_PAGO_ACTIVOS).exists():
+                raise PagoNoIniciableError(MENSAJE_PAGO_EN_PROCESO)
+
+            if metodo_pago is not None and metodo_pago.pk != transaccion.metodo_pago_id:
+                if not metodo_pago.activo or metodo_pago.cliente_id != transaccion.cliente_id:
+                    raise PagoNoIniciableError(
+                        "El método de pago seleccionado no está disponible."
+                    )
+                transaccion.metodo_pago = metodo_pago
+                transaccion.save(update_fields=["metodo_pago", "actualizada_en"])
+
+            metodo = transaccion.metodo_pago
+            if metodo is None or not metodo.activo or metodo.cliente_id != transaccion.cliente_id:
+                raise PagoNoIniciableError(
+                    "La operación no tiene un método de pago activo para realizar el pago."
+                )
+
+            monto, moneda = importe_a_cobrar(transaccion)
+            try:
+                proveedor = get_proveedor(metodo)
+                proveedor.validar(metodo, monto, moneda)
+            except MetodoPagoNoHabilitadoError as error:
+                raise PagoNoIniciableError(str(error)) from error
+
+            pago = Pago.objects.create(
+                transaccion=transaccion,
+                metodo_pago=metodo,
+                proveedor=proveedor.codigo,
+                monto=proveedor.monto_a_cobrar(monto, moneda),
+                moneda_id=moneda,
+                iniciado_por=usuario,
+            )
+    except IntegrityError as error:
+        # Otra solicitud registró un pago activo en paralelo.
+        raise PagoNoIniciableError(MENSAJE_PAGO_EN_PROCESO) from error
+
+    try:
+        resultado = proveedor.iniciar_pago(pago)
+    except ProveedorPagoError as error:
+        pago.estado = EstadoPago.RECHAZADO if error.rechazado else EstadoPago.ERROR
+        pago.referencia_externa = error.referencia_externa or None
+        pago.mensaje_proveedor = error.detalle or error.mensaje_usuario
+        pago.save(update_fields=["estado", "referencia_externa", "mensaje_proveedor", "actualizado_en"])
+        raise PagoNoIniciableError(error.mensaje_usuario) from error
+
+    pago.estado = EstadoPago.EN_PROCESO
+    pago.referencia_externa = resultado.referencia_externa
+    pago.save(update_fields=["estado", "referencia_externa", "actualizado_en"])
+    return pago

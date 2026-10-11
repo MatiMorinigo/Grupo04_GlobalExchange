@@ -12,6 +12,7 @@ generada automáticamente con Sphinx a partir de los docstrings del proyecto.
    core
    cotizaciones
    destinos
+   integrations
    notificaciones
    pagos
    transacciones
