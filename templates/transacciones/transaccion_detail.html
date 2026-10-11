@@ -229,8 +229,49 @@
     </div>
     {% endif %}
 
+    {% if puede_iniciar_pago and puede_cambiar_metodo %}
+    <div class="card card-warning card-outline mt-4">
+        <div class="card-header">
+            <h2 class="card-title h5 mb-0">Reintentar el pago</h2>
+        </div>
+        <div class="card-body">
+            <p class="mb-3">
+                {% if pagos %}
+                El intento anterior no se completó. Podés volver a intentarlo
+                con el mismo método o elegir otro de tus métodos de pago.
+                {% else %}
+                El método de pago de esta operación no permite iniciar el pago.
+                Elegí otro de tus métodos de pago para continuar.
+                {% endif %}
+            </p>
+            <form method="post" action="{% url 'transaccion-web-iniciar-pago' transaccion.id_transaccion %}"
+                class="row g-2 align-items-end">
+                {% csrf_token %}
+                <div class="col-12 col-md-7">
+                    <label for="metodo_pago" class="form-label">Pagar con</label>
+                    <select name="metodo_pago" id="metodo_pago" class="form-select">
+                        {% for metodo in metodos_disponibles %}
+                        <option value="{{ metodo.id_metodo_pago }}"
+                            {% if metodo.id_metodo_pago == transaccion.metodo_pago_id %}selected{% endif %}>
+                            {{ metodo.get_tipo_display }} · {{ metodo.identificacion }}
+                            {% if metodo.id_metodo_pago == transaccion.metodo_pago_id %}(método actual){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-auto">
+                    <button type="submit" class="btn btn-success" onclick="this.disabled=true;this.form.submit();">
+                        <i class="bi bi-credit-card" aria-hidden="true"></i>
+                        Pagar {{ monto_pago|formato_numero:2 }} {{ moneda_pago }}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="mt-4 d-flex flex-wrap gap-2">
-        {% if puede_iniciar_pago %}
+        {% if puede_iniciar_pago and not puede_cambiar_metodo %}
         <form method="post" action="{% url 'transaccion-web-iniciar-pago' transaccion.id_transaccion %}" class="d-inline">
             {% csrf_token %}
             <button type="submit" class="btn btn-success" onclick="this.disabled=true;this.form.submit();">

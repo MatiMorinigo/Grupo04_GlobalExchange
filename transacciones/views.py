@@ -8,10 +8,11 @@ from django.views.generic import DetailView, FormView, ListView
 
 from core.keycloak import tiene_rol
 from core.mixins import ClienteActivoRequiredMixin
+from pagos.models import MetodoPago
 from usuarios.models import obtener_cliente_activo
 
 from .forms import CompraDivisaForm, HistorialTransaccionFiltroForm, VentaDivisaForm
-from .models import ESTADOS_PAGO_ACTIVOS, EstadoTransaccion, Transaccion
+from .models import ESTADOS_PAGO_ACTIVOS, EstadoPago, EstadoTransaccion, Transaccion
 from .services import (
     OperacionCambiariaError,
     PagoNoIniciableError,
@@ -21,6 +22,7 @@ from .services import (
     crear_transaccion_venta,
     importe_a_cobrar,
     iniciar_pago,
+    metodo_permite_pagar,
     obtener_tasa_vigente_compra,
     obtener_tasa_vigente_venta,
 )
@@ -480,8 +482,10 @@ class TransaccionWebDetailView(AccesoHistorialTransaccionMixin, DetailView):
         Returns:
             dict: Contexto con el menú activo según el tipo de operación
             ('transacciones' para compras y 'venta' para ventas), los pagos
-            registrados, el pago en curso si existe, el importe a pagar y si
-            el usuario puede iniciar el pago.
+            registrados, el pago en curso si existe, el importe a pagar, si
+            el usuario puede iniciar el pago y, tras un intento fallido o si
+            el método actual no permite pagar, los métodos entre los que
+            puede elegir.
         """
         context = super().get_context_data(**kwargs)
         transaccion = context["transaccion"]
@@ -498,17 +502,32 @@ class TransaccionWebDetailView(AccesoHistorialTransaccionMixin, DetailView):
             self.cliente_activo is not None
             and self.cliente_activo.pk == transaccion.cliente_id
         )
+        puede_iniciar_pago = (
+            transaccion.estado == EstadoTransaccion.PENDIENTE
+            and pago_activo is None
+            and es_cliente_de_la_operacion
+        )
+        # Se ofrece pagar con otro método cuando el intento anterior falló o
+        # cuando el método actual ni siquiera permite iniciar el pago.
+        hubo_intento_fallido = any(
+            pago.estado in (EstadoPago.RECHAZADO, EstadoPago.ERROR) for pago in pagos
+        )
+        metodos_disponibles = []
+        if puede_iniciar_pago and (
+            hubo_intento_fallido or not metodo_permite_pagar(transaccion)
+        ):
+            metodos_disponibles = list(
+                MetodoPago.objects.filter(cliente=self.cliente_activo, activo=True)
+            )
         context.update(
             {
                 "pagos": pagos,
                 "pago_activo": pago_activo,
                 "monto_pago": monto_pago,
                 "moneda_pago": moneda_pago,
-                "puede_iniciar_pago": (
-                    transaccion.estado == EstadoTransaccion.PENDIENTE
-                    and pago_activo is None
-                    and es_cliente_de_la_operacion
-                ),
+                "puede_iniciar_pago": puede_iniciar_pago,
+                "puede_cambiar_metodo": len(metodos_disponibles) > 1,
+                "metodos_disponibles": metodos_disponibles,
             }
         )
         return context
@@ -529,7 +548,9 @@ class TransaccionIniciarPagoView(ClienteActivoRequiredMixin, View):
 
     Solo acepta POST. La transacción se busca dentro del cliente activo del
     usuario, por lo que nadie puede pagar operaciones de otro cliente, ni
-    siquiera quienes pueden consultarlas en el historial general.
+    siquiera quienes pueden consultarlas en el historial general. El formulario
+    puede incluir ``metodo_pago`` para pagar con otro método activo del
+    cliente, por ejemplo después de un rechazo.
     """
 
     http_method_names = ["post"]
@@ -546,13 +567,29 @@ class TransaccionIniciarPagoView(ClienteActivoRequiredMixin, View):
             con un mensaje de éxito o con el motivo por el que no se pudo
             iniciar el pago.
         """
+        cliente = obtener_cliente_activo(request.user)
         transaccion = get_object_or_404(
             Transaccion,
             id_transaccion=id_transaccion,
-            cliente=obtener_cliente_activo(request.user),
+            cliente=cliente,
         )
+
+        metodo_pago = None
+        id_metodo = request.POST.get("metodo_pago", "").strip()
+        if id_metodo:
+            if id_metodo.isdigit():
+                metodo_pago = MetodoPago.objects.filter(
+                    pk=int(id_metodo), cliente=cliente, activo=True
+                ).first()
+            if metodo_pago is None:
+                messages.error(
+                    request,
+                    "No se pudo iniciar el pago. El método de pago seleccionado no está disponible.",
+                )
+                return redirect("transaccion-web-detail", id_transaccion=id_transaccion)
+
         try:
-            pago = iniciar_pago(transaccion, request.user)
+            pago = iniciar_pago(transaccion, request.user, metodo_pago=metodo_pago)
         except PagoNoIniciableError as error:
             messages.error(request, f"No se pudo iniciar el pago. {error}")
         else:

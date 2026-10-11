@@ -1739,3 +1739,287 @@ class IniciarPagoWebTests(PagoTestMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context["puede_iniciar_pago"])
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_dummy")
+class CambiarMetodoPagoServicioTests(PagoTestMixin, TestCase):
+    """Prueba que se pueda pagar con otro método después de un rechazo."""
+
+    def _rechazar_primer_intento(self, transaccion):
+        with patch(CREAR_PAYMENT_INTENT, side_effect=_rechazo_tarjeta("pi_rechazado")):
+            with self.assertRaises(PagoNoIniciableError):
+                iniciar_pago(transaccion, self.user)
+
+    def test_despues_de_un_rechazo_se_paga_con_otro_metodo(self):
+        transaccion = self._crear_transaccion()
+        self._rechazar_primer_intento(transaccion)
+
+        pago = iniciar_pago(transaccion, self.user, metodo_pago=self.billetera)
+
+        self.assertEqual(pago.proveedor, ProveedorPago.SIMULADOR_BILLETERA)
+        self.assertEqual(pago.metodo_pago, self.billetera)
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.metodo_pago, self.billetera)
+        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
+
+    def test_los_intentos_anteriores_conservan_su_metodo(self):
+        transaccion = self._crear_transaccion()
+        self._rechazar_primer_intento(transaccion)
+
+        iniciar_pago(transaccion, self.user, metodo_pago=self.billetera)
+
+        anterior = transaccion.pagos.get(estado=EstadoPago.RECHAZADO)
+        self.assertEqual(anterior.metodo_pago, self.tarjeta)
+        self.assertEqual(transaccion.pagos.count(), 2)
+
+    def test_se_puede_cambiar_a_otra_tarjeta(self):
+        otra = self._crear_metodo(self.cliente, ultimos_cuatro_digitos="4242")
+        transaccion = self._crear_transaccion()
+        self._rechazar_primer_intento(transaccion)
+
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_otra")) as crear:
+            pago = iniciar_pago(transaccion, self.user, metodo_pago=otra)
+
+        self.assertEqual(pago.referencia_externa, "pi_otra")
+        self.assertEqual(pago.metodo_pago, otra)
+        self.assertEqual(crear.call_args.kwargs["payment_method"], "pm_card_visa")
+
+    def test_metodo_de_otro_cliente_no_esta_disponible(self):
+        ajeno = self._crear_metodo(self.otro_cliente)
+        transaccion = self._crear_transaccion()
+
+        with patch(CREAR_PAYMENT_INTENT) as crear:
+            with self.assertRaisesMessage(PagoNoIniciableError, "no está disponible"):
+                iniciar_pago(transaccion, self.user, metodo_pago=ajeno)
+
+        crear.assert_not_called()
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.metodo_pago, self.tarjeta)
+        self.assertFalse(Pago.objects.exists())
+
+    def test_metodo_inactivo_no_esta_disponible(self):
+        inactivo = self._crear_metodo(self.cliente, activo=False)
+        transaccion = self._crear_transaccion()
+
+        with self.assertRaisesMessage(PagoNoIniciableError, "no está disponible"):
+            iniciar_pago(transaccion, self.user, metodo_pago=inactivo)
+
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.metodo_pago, self.tarjeta)
+
+    def test_metodo_no_habilitado_no_reemplaza_al_de_la_operacion(self):
+        sin_token = self._crear_metodo(
+            self.cliente, ultimos_cuatro_digitos="4444", stripe_payment_method_id=""
+        )
+        transaccion = self._crear_transaccion()
+
+        with self.assertRaisesMessage(PagoNoIniciableError, "no está habilitada"):
+            iniciar_pago(transaccion, self.user, metodo_pago=sin_token)
+
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.metodo_pago, self.tarjeta)
+        self.assertFalse(Pago.objects.exists())
+
+    def test_indicar_el_mismo_metodo_equivale_a_no_indicar_ninguno(self):
+        transaccion = self._crear_transaccion()
+
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_mismo")):
+            pago = iniciar_pago(transaccion, self.user, metodo_pago=self.tarjeta)
+
+        self.assertEqual(pago.metodo_pago, self.tarjeta)
+        self.assertEqual(pago.referencia_externa, "pi_mismo")
+
+
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC, STRIPE_SECRET_KEY="sk_test_dummy")
+class CambiarMetodoPagoWebTests(PagoTestMixin, TestCase):
+    """Prueba la elección de otro método desde el detalle de la operación."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+        self.transaccion = self._crear_transaccion()
+
+    def _roles(self):
+        return patch("transacciones.views.tiene_rol", return_value=False)
+
+    def _detalle(self):
+        with self._roles():
+            return self.client.get(
+                reverse("transaccion-web-detail", args=[self.transaccion.id_transaccion]),
+                HTTP_HOST="127.0.0.1",
+            )
+
+    def _pagar(self, **datos):
+        return self.client.post(
+            reverse("transaccion-web-iniciar-pago", args=[self.transaccion.id_transaccion]),
+            datos,
+            HTTP_HOST="127.0.0.1",
+        )
+
+    def _mensajes(self, response):
+        return [str(mensaje) for mensaje in response.wsgi_request._messages]
+
+    def _rechazar_primer_intento(self):
+        with patch(CREAR_PAYMENT_INTENT, side_effect=_rechazo_tarjeta()):
+            self._pagar()
+
+    def test_antes_de_un_intento_fallido_no_se_ofrece_cambiar_de_metodo(self):
+        response = self._detalle()
+
+        self.assertTrue(response.context["puede_iniciar_pago"])
+        self.assertFalse(response.context["puede_cambiar_metodo"])
+        self.assertNotContains(response, 'name="metodo_pago"')
+
+    def test_despues_de_un_rechazo_se_ofrecen_los_metodos_activos(self):
+        inactivo = self._crear_metodo(self.cliente, activo=False, ultimos_cuatro_digitos="1111")
+        ajeno = self._crear_metodo(self.otro_cliente, ultimos_cuatro_digitos="2222")
+        self._rechazar_primer_intento()
+
+        response = self._detalle()
+
+        self.assertTrue(response.context["puede_cambiar_metodo"])
+        self.assertContains(response, 'name="metodo_pago"')
+        ofrecidos = {m.pk for m in response.context["metodos_disponibles"]}
+        self.assertEqual(ofrecidos, {self.tarjeta.pk, self.billetera.pk})
+        self.assertNotIn(inactivo.pk, ofrecidos)
+        self.assertNotIn(ajeno.pk, ofrecidos)
+
+    def test_con_un_solo_metodo_se_mantiene_el_boton_de_reintento(self):
+        self.billetera.activo = False
+        self.billetera.save(update_fields=["activo"])
+        self._rechazar_primer_intento()
+
+        response = self._detalle()
+
+        self.assertTrue(response.context["puede_iniciar_pago"])
+        self.assertFalse(response.context["puede_cambiar_metodo"])
+        self.assertNotContains(response, 'name="metodo_pago"')
+
+    def test_se_paga_con_el_metodo_elegido(self):
+        self._rechazar_primer_intento()
+
+        response = self._pagar(metodo_pago=str(self.billetera.pk))
+
+        self.assertTrue(
+            any("Simulador de billetera" in mensaje for mensaje in self._mensajes(response))
+        )
+        self.transaccion.refresh_from_db()
+        self.assertEqual(self.transaccion.metodo_pago, self.billetera)
+        self.assertEqual(self.transaccion.pagos.count(), 2)
+        self.assertEqual(self.transaccion.estado, EstadoTransaccion.PENDIENTE)
+
+    def test_rechaza_un_metodo_de_otro_cliente(self):
+        ajeno = self._crear_metodo(self.otro_cliente)
+
+        with patch(CREAR_PAYMENT_INTENT) as crear:
+            response = self._pagar(metodo_pago=str(ajeno.pk))
+
+        crear.assert_not_called()
+        self.assertTrue(
+            any("no está disponible" in mensaje for mensaje in self._mensajes(response))
+        )
+        self.assertFalse(Pago.objects.exists())
+
+    def test_rechaza_un_identificador_invalido(self):
+        with patch(CREAR_PAYMENT_INTENT) as crear:
+            response = self._pagar(metodo_pago="abc")
+
+        crear.assert_not_called()
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Pago.objects.exists())
+
+
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC, STRIPE_SECRET_KEY="sk_test_dummy")
+class CambiarMetodoPagoVentaTests(PagoTestMixin, TestCase):
+    """Prueba el cambio de método de pago en una venta de divisas."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+        self.transaccion = self._crear_transaccion(tipo=TipoOperacion.VENTA)
+
+    def _detalle(self):
+        with patch("transacciones.views.tiene_rol", return_value=False):
+            return self.client.get(
+                reverse("transaccion-web-detail", args=[self.transaccion.id_transaccion]),
+                HTTP_HOST="127.0.0.1",
+            )
+
+    def _pagar(self, **datos):
+        return self.client.post(
+            reverse("transaccion-web-iniciar-pago", args=[self.transaccion.id_transaccion]),
+            datos,
+            HTTP_HOST="127.0.0.1",
+        )
+
+    def _mensajes(self, response):
+        return [str(mensaje) for mensaje in response.wsgi_request._messages]
+
+    def test_venta_rechazada_ofrece_elegir_otro_metodo(self):
+        with patch(CREAR_PAYMENT_INTENT, side_effect=_rechazo_tarjeta()):
+            self._pagar()
+
+        response = self._detalle()
+
+        self.assertTrue(response.context["puede_cambiar_metodo"])
+        self.assertContains(response, 'name="metodo_pago"')
+        self.assertContains(response, "Pagar 100 USD")
+
+    def test_venta_se_paga_con_la_billetera_despues_de_un_rechazo(self):
+        with patch(CREAR_PAYMENT_INTENT, side_effect=_rechazo_tarjeta()):
+            self._pagar()
+
+        response = self._pagar(metodo_pago=str(self.billetera.pk))
+
+        self.assertTrue(
+            any("Simulador de billetera" in mensaje for mensaje in self._mensajes(response))
+        )
+        self.transaccion.refresh_from_db()
+        self.assertEqual(self.transaccion.metodo_pago, self.billetera)
+        pago = self.transaccion.pagos.get(estado=EstadoPago.EN_PROCESO)
+        self.assertEqual(pago.monto, Decimal("100.00"))
+        self.assertEqual(pago.moneda_id, "USD")
+        self.assertEqual(self.transaccion.estado, EstadoTransaccion.PENDIENTE)
+
+    def test_metodo_sin_token_ofrece_elegir_otro_sin_haber_intentado_pagar(self):
+        sin_token = self._crear_metodo(
+            self.cliente, ultimos_cuatro_digitos="4444", stripe_payment_method_id=""
+        )
+        Transaccion.objects.filter(pk=self.transaccion.pk).update(metodo_pago=sin_token)
+
+        response = self._detalle()
+
+        self.assertFalse(self.transaccion.pagos.exists())
+        self.assertTrue(response.context["puede_cambiar_metodo"])
+        self.assertContains(response, "no permite iniciar el pago")
+
+    def test_metodo_sin_token_se_reemplaza_por_otro_habilitado(self):
+        sin_token = self._crear_metodo(
+            self.cliente, ultimos_cuatro_digitos="4444", stripe_payment_method_id=""
+        )
+        Transaccion.objects.filter(pk=self.transaccion.pk).update(metodo_pago=sin_token)
+
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado("pi_venta_nueva")):
+            self._pagar(metodo_pago=str(self.tarjeta.pk))
+
+        self.transaccion.refresh_from_db()
+        self.assertEqual(self.transaccion.metodo_pago, self.tarjeta)
+        self.assertEqual(self.transaccion.pagos.get().referencia_externa, "pi_venta_nueva")
+
+    def test_metodo_inactivo_ofrece_elegir_otro(self):
+        self.tarjeta.activo = False
+        self.tarjeta.save(update_fields=["activo"])
+        otra = self._crear_metodo(self.cliente, ultimos_cuatro_digitos="1111")
+
+        response = self._detalle()
+
+        self.assertTrue(response.context["puede_cambiar_metodo"])
+        ofrecidos = {m.pk for m in response.context["metodos_disponibles"]}
+        self.assertEqual(ofrecidos, {self.billetera.pk, otra.pk})
+
+    def test_metodo_habilitado_sin_intentos_no_muestra_el_selector(self):
+        response = self._detalle()
+
+        self.assertFalse(response.context["puede_cambiar_metodo"])
+        self.assertNotContains(response, 'name="metodo_pago"')

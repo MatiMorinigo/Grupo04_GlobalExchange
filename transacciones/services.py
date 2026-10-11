@@ -388,7 +388,31 @@ def importe_a_cobrar(transaccion):
     return transaccion.monto_divisa, transaccion.moneda_id
 
 
-def iniciar_pago(transaccion, usuario):
+def metodo_permite_pagar(transaccion):
+    """Indica si el método de pago actual de la operación permite iniciar el pago.
+
+    Aplica las mismas comprobaciones previas que ``iniciar_pago`` sin crear
+    ningún pago ni contactar al proveedor.
+
+    Args:
+        transaccion (Transaccion): Operación a pagar.
+
+    Returns:
+        bool: False si la operación no tiene método, si está inactivo, si no
+        es del cliente o si el proveedor no lo habilita para este importe.
+    """
+    metodo = transaccion.metodo_pago
+    if metodo is None or not metodo.activo or metodo.cliente_id != transaccion.cliente_id:
+        return False
+    monto, moneda = importe_a_cobrar(transaccion)
+    try:
+        get_proveedor(metodo).validar(metodo, monto, moneda)
+    except MetodoPagoNoHabilitadoError:
+        return False
+    return True
+
+
+def iniciar_pago(transaccion, usuario, metodo_pago=None):
     """Inicia el pago de una transacción pendiente ante el proveedor externo.
 
     El proceso tiene dos fases. Primero, con la transacción bloqueada, valida
@@ -398,19 +422,26 @@ def iniciar_pago(transaccion, usuario):
     solicitud al proveedor y guarda su respuesta. Iniciar el pago nunca
     modifica el estado de la transacción: la confirmación llega más tarde.
 
+    Si se indica un método de pago distinto del de la operación (por ejemplo,
+    después de que el proveedor rechazó la tarjeta), pasa a ser el método de la
+    operación siempre que el pago pueda iniciarse. Los intentos anteriores
+    conservan el método con el que se hicieron.
+
     Args:
         transaccion (Transaccion): Operación a pagar.
         usuario (django.contrib.auth.models.User): Usuario que inicia el pago.
+        metodo_pago (pagos.models.MetodoPago or None): Método con el que se
+            quiere pagar. Si se omite, se usa el de la operación.
 
     Returns:
         Pago: Pago ``EN_PROCESO`` con la referencia externa del proveedor.
 
     Raises:
         PagoNoIniciableError: Si la transacción no está pendiente, ya tiene
-            un pago en curso, su método de pago no está habilitado o el
-            proveedor rechazó o no pudo procesar la solicitud. En los dos
-            últimos casos el pago queda registrado como ``RECHAZADO`` o
-            ``ERROR``.
+            un pago en curso, el método elegido no es un método activo del
+            cliente, su método de pago no está habilitado o el proveedor
+            rechazó o no pudo procesar la solicitud. En los dos últimos casos
+            el pago queda registrado como ``RECHAZADO`` o ``ERROR``.
     """
     try:
         with db_transaction.atomic():
@@ -427,6 +458,14 @@ def iniciar_pago(transaccion, usuario):
                 )
             if transaccion.pagos.filter(estado__in=ESTADOS_PAGO_ACTIVOS).exists():
                 raise PagoNoIniciableError(MENSAJE_PAGO_EN_PROCESO)
+
+            if metodo_pago is not None and metodo_pago.pk != transaccion.metodo_pago_id:
+                if not metodo_pago.activo or metodo_pago.cliente_id != transaccion.cliente_id:
+                    raise PagoNoIniciableError(
+                        "El método de pago seleccionado no está disponible."
+                    )
+                transaccion.metodo_pago = metodo_pago
+                transaccion.save(update_fields=["metodo_pago", "actualizada_en"])
 
             metodo = transaccion.metodo_pago
             if metodo is None or not metodo.activo or metodo.cliente_id != transaccion.cliente_id:
