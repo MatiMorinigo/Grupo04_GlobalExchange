@@ -356,6 +356,21 @@
 
                     </li>
 
+                    {% if es_administrador or es_analista_cambiario %}
+                    <li class="nav-item">
+
+                        <a href="{% url 'pago-simulado-list' %}"
+                           class="nav-link {% if active_menu == 'pagos_simulados' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-wallet2"></i>
+
+                            <p>Pagos simulados</p>
+
+                        </a>
+
+                    </li>
+                    {% endif %}
+
                     {% if request.user.is_authenticated %}
                     <li class="nav-item">
 

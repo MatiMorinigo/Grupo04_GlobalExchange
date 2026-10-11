@@ -3,6 +3,13 @@
 
 {% block title %}Operación {{ transaccion.id_transaccion }} | Global Exchange{% endblock %}
 
+{% block styles %}
+{% if pago_activo %}
+{# Mientras el proveedor no responde, la página se actualiza sola para mostrar el resultado. #}
+<meta http-equiv="refresh" content="10">
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
 
@@ -17,11 +24,21 @@
             La operación {{ transaccion.id_transaccion }} está en estado
             {{ transaccion.get_estado_display|upper }}.
         </strong>
-        {% if transaccion.estado == "PENDIENTE" and pago_activo %}
+        {% if transaccion.estado == "COMPLETADA" and pago_confirmado %}
+        <div class="mt-1">
+            Pago confirmado por {{ pago_confirmado.get_proveedor_display }} el
+            {{ pago_confirmado.confirmado_en }}
+            (referencia {{ pago_confirmado.referencia_externa }}).
+        </div>
+        {% elif transaccion.estado == "PENDIENTE" and pago_activo %}
         <div class="mt-1">
             Pago en proceso con {{ pago_activo.get_proveedor_display }}
             (referencia {{ pago_activo.referencia_externa|default:"en trámite" }}).
+            {% if pago_activo.proveedor == "SIMULADOR_BILLETERA" %}
+            Esperando la aprobación del pago en la billetera.
+            {% endif %}
             La operación se completará cuando el proveedor confirme el pago.
+            Esta página se actualiza automáticamente.
         </div>
         {% elif transaccion.estado == "PENDIENTE" %}
         <div class="mt-1">
@@ -215,9 +232,12 @@
                             <td>{{ pago.monto|formato_numero:2 }} {{ pago.moneda_id }}</td>
                             <td><code>{{ pago.referencia_externa|default:"—" }}</code></td>
                             <td>
-                                <span class="badge {% if pago.estado == 'EN_PROCESO' or pago.estado == 'INICIADO' %}text-bg-warning{% elif pago.estado == 'RECHAZADO' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">
+                                <span class="badge {% if pago.estado == 'CONFIRMADO' %}text-bg-success{% elif pago.estado == 'EN_PROCESO' or pago.estado == 'INICIADO' %}text-bg-warning{% elif pago.estado == 'RECHAZADO' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">
                                     {{ pago.get_estado_display }}
                                 </span>
+                                {% if pago.confirmado_en %}
+                                <div class="small text-secondary mt-1">{{ pago.confirmado_en }}</div>
+                                {% endif %}
                             </td>
                             <td>{{ pago.mensaje_proveedor|default:"—" }}</td>
                         </tr>

@@ -22,8 +22,8 @@ def app_environment(request):
             comprobar el rol; si es None, el permiso se considera falso.
 
     Returns:
-        dict: Contexto con es_administrador, es_tesorero, es_cajero,
-        rol_usuario y app_environment.
+        dict: Contexto con es_administrador, es_analista_cambiario,
+        es_tesorero, es_cajero, rol_usuario y app_environment.
     """
     environment = getattr(settings, "APP_ENV", "Desarrollo")
     if str(environment).strip().lower() in {"prod", "production", "produccion", "producción"}:
@@ -34,6 +34,7 @@ def app_environment(request):
 
     return {
         "es_administrador": "administrador" in roles,
+        "es_analista_cambiario": "analista_cambiario" in roles,
         "es_tesorero": "tesorero" in roles,
         "es_cajero": "cajero" in roles,
         "rol_usuario": " · ".join(roles_visibles),

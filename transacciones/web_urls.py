@@ -2,6 +2,8 @@ from django.urls import path
 
 from .views import (
     CompraDivisaWebCreateView,
+    PagoSimuladoListView,
+    PagoSimuladoResolverView,
     TransaccionComprobanteView,
     TransaccionHistorialView,
     TransaccionIniciarPagoView,
@@ -35,4 +37,10 @@ urlpatterns = [
         name="transaccion-web-iniciar-pago",
     ),
     path("webhooks/stripe/", webhook_stripe, name="webhook-stripe"),
+    path("pagos-simulados/", PagoSimuladoListView.as_view(), name="pago-simulado-list"),
+    path(
+        "pagos-simulados/<int:id_pago>/resolver/",
+        PagoSimuladoResolverView.as_view(),
+        name="pago-simulado-resolver",
+    ),
 ]
