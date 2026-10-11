@@ -1,6 +1,6 @@
 from django import forms
 
-from .constants import PROVEEDORES_BILLETERA
+from .constants import PROVEEDORES_BILLETERA, TARJETAS_PRUEBA_STRIPE
 from .models import MetodoPago, TipoMetodoPago
 from .validators import validar_numero_tarjeta, validar_vencimiento_no_vencido
 
@@ -164,8 +164,10 @@ class MetodoPagoForm(forms.ModelForm):
         if instance.es_billetera:
             instance.ultimos_cuatro_digitos = ""
             instance.fecha_vencimiento = ""
+            instance.stripe_payment_method_id = ""
         elif numero:
             instance.ultimos_cuatro_digitos = numero[-4:]
+            instance.stripe_payment_method_id = TARJETAS_PRUEBA_STRIPE.get(numero, "")
         if commit:
             instance.save()
         return instance

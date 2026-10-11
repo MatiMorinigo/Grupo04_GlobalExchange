@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import MetodoPago, TipoMetodoPago
+from .constants import TARJETAS_PRUEBA_STRIPE
 from .validators import validar_numero_billetera, validar_numero_tarjeta, validar_vencimiento_no_vencido
 
 
@@ -90,6 +91,7 @@ class MetodoPagoSerializer(serializers.ModelSerializer):
         """
         numero = validated_data.pop("numero_tarjeta", "")
         validated_data["ultimos_cuatro_digitos"] = numero[-4:]
+        validated_data["stripe_payment_method_id"] = TARJETAS_PRUEBA_STRIPE.get(numero, "")
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
@@ -105,5 +107,6 @@ class MetodoPagoSerializer(serializers.ModelSerializer):
         numero = validated_data.pop("numero_tarjeta", None)
         if numero:
             validated_data["ultimos_cuatro_digitos"] = numero[-4:]
+            validated_data["stripe_payment_method_id"] = TARJETAS_PRUEBA_STRIPE.get(numero, "")
         validated_data.pop("tipo", None)
         return super().update(instance, validated_data)

@@ -432,3 +432,112 @@ class MetodoPagoAPITests(TestCase):
             ).count(),
             1,
         )
+
+
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC)
+class TokenStripeMetodoPagoTests(TestCase):
+    """Prueba que el alta de tarjetas asocie el token de Stripe sin guardar el número."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="stripeuser", password="testpass123")
+        self.client.force_login(self.user)
+        self.cliente = _crear_cliente("80000101-1", "Cliente Stripe")
+        UsuarioCliente.objects.create(usuario=self.user, cliente_activo=self.cliente)
+
+    def _alta_web(self, numero):
+        self.client.post(
+            reverse("metodopago-web-create"),
+            {
+                "tipo": TipoMetodoPago.TARJETA_CREDITO,
+                "titular": "Juan Perez",
+                "numero_tarjeta": numero,
+                "fecha_vencimiento": "12/30",
+            },
+            HTTP_HOST="127.0.0.1",
+        )
+        return MetodoPago.objects.get(cliente=self.cliente)
+
+    def test_tarjeta_de_prueba_aprobada_guarda_pm_card_visa(self):
+        metodo = self._alta_web("4242 4242 4242 4242")
+
+        self.assertEqual(metodo.stripe_payment_method_id, "pm_card_visa")
+        self.assertEqual(metodo.ultimos_cuatro_digitos, "4242")
+
+    def test_tarjeta_de_prueba_rechazada_guarda_pm_card_charge_declined(self):
+        metodo = self._alta_web("4000000000000002")
+
+        self.assertEqual(metodo.stripe_payment_method_id, "pm_card_chargeDeclined")
+
+    def test_tarjeta_no_mapeada_queda_sin_token(self):
+        metodo = self._alta_web(TARJETA_VALIDA)
+
+        self.assertEqual(metodo.stripe_payment_method_id, "")
+
+    def test_ningun_campo_guarda_el_numero_completo(self):
+        metodo = self._alta_web("4242424242424242")
+
+        valores = [str(getattr(metodo, campo.attname)) for campo in MetodoPago._meta.concrete_fields]
+        self.assertFalse(any("4242424242424242" in valor for valor in valores))
+
+    def test_editar_sin_numero_conserva_el_token(self):
+        metodo = self._alta_web("4242424242424242")
+
+        self.client.post(
+            reverse("metodopago-web-update", kwargs={"id_metodo_pago": metodo.id_metodo_pago}),
+            {
+                "tipo": metodo.tipo,
+                "titular": "Otro Titular",
+                "numero_tarjeta": "",
+                "fecha_vencimiento": metodo.fecha_vencimiento,
+            },
+            HTTP_HOST="127.0.0.1",
+        )
+
+        metodo.refresh_from_db()
+        self.assertEqual(metodo.stripe_payment_method_id, "pm_card_visa")
+
+    def test_editar_con_otro_numero_actualiza_el_token(self):
+        metodo = self._alta_web("4242424242424242")
+
+        self.client.post(
+            reverse("metodopago-web-update", kwargs={"id_metodo_pago": metodo.id_metodo_pago}),
+            {
+                "tipo": metodo.tipo,
+                "titular": metodo.titular,
+                "numero_tarjeta": "4000000000009995",
+                "fecha_vencimiento": metodo.fecha_vencimiento,
+            },
+            HTTP_HOST="127.0.0.1",
+        )
+
+        metodo.refresh_from_db()
+        self.assertEqual(metodo.stripe_payment_method_id, "pm_card_chargeDeclinedInsufficientFunds")
+
+    def test_billetera_queda_sin_token(self):
+        metodo = MetodoPago(
+            cliente=self.cliente,
+            tipo=TipoMetodoPago.BILLETERA_ELECTRONICA,
+            titular="Juan Perez",
+            proveedor_billetera="Tigo Money",
+            numero_billetera="0981123456",
+            stripe_payment_method_id="pm_card_visa",
+        )
+        metodo.full_clean()
+
+        self.assertEqual(metodo.stripe_payment_method_id, "")
+
+    def test_alta_por_api_guarda_el_token(self):
+        response = self.client.post(
+            reverse("metodopago-list-create"),
+            {
+                "tipo": TipoMetodoPago.TARJETA_DEBITO,
+                "titular": "Juan Perez",
+                "numero_tarjeta": "4242424242424242",
+                "fecha_vencimiento": "12/30",
+            },
+            HTTP_HOST="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        metodo = MetodoPago.objects.get(cliente=self.cliente)
+        self.assertEqual(metodo.stripe_payment_method_id, "pm_card_visa")
