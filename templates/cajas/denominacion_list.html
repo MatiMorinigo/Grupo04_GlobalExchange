@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Denominaciones de billetes | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6"><h3 class="mb-0">Denominaciones de billetes</h3></div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item active">Denominaciones de billetes</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card card-primary card-outline">
+    <div class="card-header d-flex align-items-center justify-content-between">
+        <h3 class="card-title mb-0">Denominaciones registradas</h3>
+        <a href="{% url 'denominacion-create' %}" class="btn btn-primary ms-auto">Nueva denominación</a>
+    </div>
+    <div class="card-body">
+        <p class="text-body-secondary">Para registrar una apertura, la denominación y su moneda deben estar habilitadas.</p>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle">
+                <thead><tr><th>Moneda</th><th>Valor</th><th>Estado</th><th class="text-center">Acciones</th></tr></thead>
+                <tbody>
+                    {% for denominacion in denominaciones %}
+                    <tr>
+                        <td>{{ denominacion.moneda }}{% if not denominacion.moneda.activa %} <span class="badge text-bg-secondary">Moneda inactiva</span>{% endif %}</td>
+                        <td>{{ denominacion.valor|formato_numero:2 }}</td>
+                        <td>{% if denominacion.activa %}<span class="badge text-bg-success">Activa</span>{% else %}<span class="badge text-bg-secondary">Inactiva</span>{% endif %}</td>
+                        <td class="text-center">
+                            <a href="{% url 'denominacion-update' denominacion.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>
+                            {% if denominacion.activa %}
+                            <form method="post" action="{% url 'denominacion-deactivate' denominacion.pk %}" class="d-inline"
+                                  onsubmit="return confirm('¿Deshabilitar esta denominación?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Deshabilitar</button>
+                            </form>
+                            {% else %}
+                            <form method="post" action="{% url 'denominacion-activate' denominacion.pk %}" class="d-inline"
+                                  onsubmit="return confirm('¿Habilitar esta denominación?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-success">Habilitar</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-center text-secondary">No hay denominaciones registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

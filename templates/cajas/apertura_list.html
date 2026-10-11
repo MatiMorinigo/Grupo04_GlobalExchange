@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Apertura de caja | Global Exchange{% endblock %}
+{% block content_header %}
+<div class="app-content-header"><div class="container-fluid"><h3>Apertura de caja</h3></div></div>
+{% endblock %}
+{% block content %}
+<div class="card card-primary card-outline">
+    <div class="card-header"><h3 class="card-title">Mis asignaciones vigentes</h3></div>
+    <div class="card-body table-responsive">
+        <table class="table table-striped align-middle">
+            <thead><tr><th>Sucursal / Caja</th><th>Turno</th><th>Horario programado</th><th>Estado</th><th>Acción</th></tr></thead>
+            <tbody>
+            {% for asignacion in asignaciones %}
+                <tr>
+                    <td>{{ asignacion.caja }}</td><td>{{ asignacion.turno }}</td>
+                    <td>{{ asignacion.fecha_inicio|date:"d/m/Y H:i" }} — {{ asignacion.fecha_fin|date:"d/m/Y H:i" }}</td>
+                    <td>{% if asignacion.apertura_activa_id %}<span class="badge text-bg-success">Apertura activa</span>{% else %}Sin apertura activa{% endif %}</td>
+                    <td>
+                        {% if not asignacion.caja.activa or not asignacion.caja.sucursal.activa %}
+                            <span class="text-danger">Caja o sucursal deshabilitada</span>
+                        {% elif not asignacion.apertura_activa_id %}
+                            <a class="btn btn-primary btn-sm" href="{% url 'apertura-create' asignacion.pk %}">Registrar apertura</a>
+                        {% else %}<span class="text-body-secondary">Requiere cierre manual antes de otra apertura</span>{% endif %}
+                    </td>
+                </tr>
+            {% empty %}<tr><td colspan="5">No tenés cajas asignadas en este horario.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<div class="card">
+    <div class="card-header"><h3 class="card-title">Mis últimas 50 aperturas</h3></div>
+    <div class="card-body table-responsive">
+        <p>El vencimiento del turno no cierra una apertura activa.</p>
+        <table class="table table-striped align-middle">
+            <thead><tr><th>Caja</th><th>Apertura real</th><th>Estado</th><th>Resumen</th></tr></thead>
+            <tbody>{% for apertura in aperturas %}
+                <tr><td>{{ apertura.caja }}</td><td>{{ apertura.fecha_apertura|date:"d/m/Y H:i:s" }}</td><td>{{ apertura.get_estado_display }}</td>
+                    <td><a href="{% url 'apertura-detail' apertura.pk %}">Ver inventario y saldos</a></td></tr>
+            {% empty %}<tr><td colspan="4">Todavía no registraste aperturas.</td></tr>{% endfor %}</tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

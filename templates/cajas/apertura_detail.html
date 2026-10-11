@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+{% block title %}Resumen de apertura | Global Exchange{% endblock %}
+{% block content_header %}
+<div class="app-content-header"><div class="container-fluid"><h3>Resumen de apertura #{{ apertura.pk }}</h3></div></div>
+{% endblock %}
+{% block content %}
+<div class="card card-primary card-outline">
+    <div class="card-header"><h3 class="card-title">{{ apertura.caja }}</h3></div>
+    <div class="card-body">
+        <dl class="row">
+            <dt class="col-sm-3">Estado</dt><dd class="col-sm-9">{{ apertura.get_estado_display }}</dd>
+            <dt class="col-sm-3">Fecha y hora real</dt><dd class="col-sm-9">{{ apertura.fecha_apertura|date:"d/m/Y H:i:s" }}</dd>
+            <dt class="col-sm-3">Cajero responsable (Keycloak)</dt><dd class="col-sm-9">{{ apertura.cajero_keycloak_id }}</dd>
+            <dt class="col-sm-3">Asignación</dt><dd class="col-sm-9">#{{ apertura.asignacion_id }} · {{ apertura.asignacion.turno }}</dd>
+            {% if apertura.fecha_cierre %}<dt class="col-sm-3">Cierre</dt><dd class="col-sm-9">{{ apertura.fecha_cierre|date:"d/m/Y H:i:s" }}</dd>{% endif %}
+        </dl>
+        <h4>Inventario inicial</h4>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead><tr><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes</th><th>Subtotal</th></tr></thead>
+                <tbody>{% for detalle in apertura.detalles_inventario.all %}
+                    <tr><td>{{ detalle.moneda_id }}</td><td>{{ detalle.valor_denominacion|formato_numero:2 }}</td><td>{{ detalle.cantidad }}</td><td>{{ detalle.subtotal|formato_numero:2 }}</td></tr>
+                {% endfor %}</tbody>
+            </table>
+        </div>
+        <h4>Saldos iniciales por moneda</h4>
+        <table class="table"><thead><tr><th>Moneda</th><th>Saldo inicial</th></tr></thead>
+            <tbody>{% for moneda, saldo in apertura.saldos_iniciales.items %}<tr><td>{{ moneda }}</td><td>{{ saldo|formato_numero:2 }}</td></tr>{% endfor %}</tbody>
+        </table>
+    </div>
+    <div class="card-footer"><a class="btn btn-secondary" href="{% url 'apertura-list' %}">Volver a mis cajas</a></div>
+</div>
+{% endblock %}

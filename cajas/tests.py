@@ -14,6 +14,60 @@ from .models import AsignacionCaja
 from uuid import uuid4
 from django.db import IntegrityError, transaction
 
+class CajaSidebarTests(TestCase):
+    def setUp(self):
+        usuario = get_user_model().objects.create_user(username="operador_sidebar")
+        self.client.force_login(usuario)
+        # Simula una sesión OIDC vigente para visitar páginas GET sin renovación.
+        session = self.client.session
+        session["oidc_id_token_expiration"] = (timezone.now() + timedelta(hours=1)).timestamp()
+        session.save()
+        self.sucursal = Sucursal.objects.create(codigo="SUC01", nombre="Central")
+        self.caja = Caja.objects.create(
+            sucursal=self.sucursal, codigo="CAJA01", nombre="Principal"
+        )
+
+    @patch("cajas.forms.obtener_cajeros_keycloak", return_value=[])
+    @patch("core.context_processors.obtener_roles")
+    @patch("core.keycloak.obtener_roles")
+    def test_navigation_on_lists_and_forms(self, keycloak_roles, context_roles, cajeros):
+        sections = (
+            ("sucursales", "sucursal-list", "bi-building", "Sucursales", (
+                ("sucursal-list", []), ("sucursal-create", []),
+                ("sucursal-update", [self.sucursal.pk]),
+            )),
+            ("cajas", "caja-list", "bi-cash-stack", "Cajas", (
+                ("caja-list", []), ("caja-create", []),
+                ("caja-update", [self.caja.pk]),
+            )),
+            ("asignaciones", "asignacion-list", "bi-person-check", "Asignaciones de cajeros", (
+                ("asignacion-list", []), ("asignacion-create", []),
+            )),
+        )
+        for role in ("administrador", "tesorero"):
+            keycloak_roles.return_value = context_roles.return_value = [role]
+            for section, link, icon, label, routes in sections:
+                for route, args in routes:
+                    with self.subTest(role=role, route=route):
+                        response = self.client.get(reverse(route, args=args))
+                        if role == "tesorero" and section == "sucursales":
+                            self.assertEqual(response.status_code, 403)
+                            continue
+                        self.assertEqual(response.status_code, 200)
+                        self.assertEqual(response.context["active_menu"], "cajas")
+                        self.assertEqual(response.context["active_submenu"], section)
+                        content = response.content.decode("utf-8")
+                        sidebar = content.split('<aside class="app-sidebar', 1)[1].split("</aside>", 1)[0]
+                        self.assertIn('class="nav-item menu-open"', sidebar)
+                        self.assertInHTML(
+                            f'<a href="{reverse(link)}" class="nav-link active">'
+                            f'<i class="nav-icon bi {icon}"></i><p>{label}</p></a>',
+                            sidebar,
+                        )
+                        # Solo se activan el grupo y la subopción de la página actual.
+                        self.assertEqual(sidebar.count('class="nav-link active"'), 2)
+
+
 class SucursalCajaTests(TestCase):
 
     def setUp(self):

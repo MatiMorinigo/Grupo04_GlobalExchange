@@ -384,6 +384,73 @@
                     </li>
                     {% endif %}
 
+                    {% if es_administrador or es_tesorero or es_cajero %}
+                    <li class="nav-item {% if active_menu == 'cajas' %}menu-open{% endif %}">
+
+                        <a href="#"
+                           class="nav-link {% if active_menu == 'cajas' %}active{% endif %}">
+
+                            <i class="nav-icon bi bi-cash-stack"></i>
+
+                            <p>
+                                Gestión de Caja
+                                <i class="nav-arrow bi bi-chevron-right"></i>
+                            </p>
+
+                        </a>
+
+                        <ul class="nav nav-treeview">
+
+                            {% if es_administrador %}
+                            <li class="nav-item">
+                                <a href="{% url 'sucursal-list' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'sucursales' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-building"></i>
+                                    <p>Sucursales</p>
+                                </a>
+                            </li>
+                            {% endif %}
+
+                            {% if es_administrador or es_tesorero %}
+                            <li class="nav-item">
+                                <a href="{% url 'caja-list' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'cajas' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-cash-stack"></i>
+                                    <p>Cajas</p>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a href="{% url 'asignacion-list' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'asignaciones' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-person-check"></i>
+                                    <p>Asignaciones de cajeros</p>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="{% url 'denominacion-list' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'denominaciones' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-cash-coin"></i>
+                                    <p>Denominaciones de billetes</p>
+                                </a>
+                            </li>
+                            {% endif %}
+
+                            {% if es_cajero %}
+                            <li class="nav-item">
+                                <a href="{% url 'apertura-list' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'aperturas' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-unlock"></i>
+                                    <p>Apertura de caja</p>
+                                </a>
+                            </li>
+                            {% endif %}
+
+                        </ul>
+
+                    </li>
+                    {% endif %}
+
                     {% if es_administrador %}
                     <li class="nav-header">
                         GESTIÓN
