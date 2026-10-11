@@ -1,0 +1,6 @@
+<tr class="inventario-linea">
+    <td><label class="visually-hidden" for="{{ form.moneda.id_for_label }}">Moneda</label>{{ form.moneda }}{{ form.moneda.errors }}</td>
+    <td><label class="visually-hidden" for="{{ form.denominacion.id_for_label }}">Denominación</label>{{ form.denominacion }}{{ form.denominacion.errors }}</td>
+    <td><label class="visually-hidden" for="{{ form.cantidad.id_for_label }}">Cantidad de billetes</label>{{ form.cantidad }}{{ form.cantidad.errors }}{{ form.non_field_errors }}</td>
+    <td><label for="{{ form.DELETE.id_for_label }}">{{ form.DELETE }} Omitir</label></td>
+</tr>

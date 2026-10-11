@@ -90,11 +90,11 @@ class HomeViewTests(SimpleTestCase):
 
     @override_settings(APP_ENV="Producción")
     def test_environment_indicator_is_hidden_in_production(self):
-        self.assertEqual(app_environment(None), {"app_environment": "", "es_administrador": False, "rol_usuario": ""})
+        self.assertEqual(app_environment(None), {"app_environment": "", "es_administrador": False, "es_tesorero": False, "es_cajero": False, "rol_usuario": ""})
 
     @override_settings(APP_ENV="Desarrollo")
     def test_environment_indicator_is_visible_outside_production(self):
-        self.assertEqual(app_environment(None), {"app_environment": "Desarrollo", "es_administrador": False, "rol_usuario": ""})
+        self.assertEqual(app_environment(None), {"app_environment": "Desarrollo", "es_administrador": False, "es_tesorero": False, "es_cajero": False, "rol_usuario": ""})
 
     @patch("core.keycloak.obtener_roles", return_value=["administrador"])
     @patch("core.context_processors.obtener_roles", return_value=["administrador"])
@@ -129,6 +129,7 @@ class HomeViewTests(SimpleTestCase):
                 context = app_environment(request)
                 self.assertEqual(context["rol_usuario"], etiqueta)
                 self.assertEqual(context["es_administrador"], rol == "administrador")
+                self.assertEqual(context["es_tesorero"], rol == "tesorero")
         obtener_roles.return_value = ["usuario", "cajero"]
         self.assertEqual(app_environment(request)["rol_usuario"], "Cajero · Usuario")
 
@@ -137,6 +138,33 @@ class HomeViewTests(SimpleTestCase):
         content = response.content.decode("utf-8")
         self.assertIn("Rol no disponible", content)
         self.assertNotIn(reverse("cliente-web-list"), content)
+
+    @patch("core.context_processors.obtener_roles")
+    def test_caja_menu_visibility_by_keycloak_role(self, obtener_roles):
+        for roles in (
+            ["administrador"], ["tesorero"], ["administrador", "tesorero"],
+            ["cajero"], ["usuario"], ["analista_cambiario"], [],
+        ):
+            with self.subTest(roles=roles):
+                obtener_roles.return_value = roles
+                content = self.render_home(User(username="operador")).content.decode("utf-8")
+                sidebar = content.split('<aside class="app-sidebar', 1)[1].split("</aside>", 1)[0]
+                allowed = "administrador" in roles or "tesorero" in roles
+                self.assertEqual("Gestión de Caja" in sidebar, allowed or "cajero" in roles)
+                self.assertEqual(reverse("apertura-list") in sidebar, "cajero" in roles)
+                self.assertEqual(f'href="{reverse("sucursal-list")}"' in sidebar, "administrador" in roles)
+                self.assertEqual(f'href="{reverse("caja-list")}"' in sidebar, allowed)
+                self.assertEqual(f'href="{reverse("asignacion-list")}"' in sidebar, allowed)
+                self.assertEqual(f'href="{reverse("denominacion-list")}"' in sidebar, allowed)
+                self.assertNotIn("menu-open", sidebar)
+
+    def test_caja_menu_hidden_without_authenticated_keycloak_roles(self):
+        for user in (AnonymousUser(), User(username="sin_token", is_superuser=True)):
+            with self.subTest(user=user):
+                content = self.render_home(user).content.decode("utf-8")
+                self.assertNotIn("Gestión de Caja", content)
+                for route in ("sucursal-list", "caja-list", "asignacion-list", "denominacion-list"):
+                    self.assertNotIn(reverse(route), content)
 
     def test_error_messages_use_bootstrap_danger_class(self):
         request = self.factory.get("/")

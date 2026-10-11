@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Registrar apertura | Global Exchange{% endblock %}
+{% block content_header %}
+<div class="app-content-header"><div class="container-fluid"><h3>Registrar apertura</h3></div></div>
+{% endblock %}
+{% block content %}
+<div class="card card-primary card-outline">
+    <div class="card-header"><h3 class="card-title">{{ asignacion.caja }}</h3></div>
+    <form method="post">
+        {% csrf_token %}
+        <div class="card-body">
+            <p>Turno: {{ asignacion.turno }} · {{ asignacion.fecha_inicio|date:"d/m/Y H:i" }} — {{ asignacion.fecha_fin|date:"d/m/Y H:i" }}</p>
+            <p>Indicá la cantidad de billetes por moneda y denominación. Se admiten cantidades cero. Los saldos se calculan al guardar.</p>
+            {% for error in errores %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+            {% if formset.non_form_errors %}<div class="alert alert-danger" role="alert">{{ formset.non_form_errors }}</div>{% endif %}
+            {{ formset.management_form }}
+            {% if denominaciones %}
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead><tr><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes</th><th>Omitir línea</th></tr></thead>
+                    <tbody id="inventario-lineas">{% for form in formset %}{% include "cajas/_inventario_linea.html" %}{% endfor %}</tbody>
+                </table>
+            </div>
+            <button type="button" id="agregar-linea" class="btn btn-outline-primary">Agregar línea</button>
+            <noscript><p>Para agregar varias líneas, habilitá JavaScript.</p></noscript>
+            {% else %}
+            <div class="alert alert-warning">No hay denominaciones habilitadas. Solicitá al administrador que configure el catálogo de billetes.</div>
+            {% endif %}
+        </div>
+        <div class="card-footer d-flex gap-2">
+            {% if denominaciones %}<button type="submit" class="btn btn-primary">Registrar apertura</button>{% endif %}
+            <a class="btn btn-secondary" href="{% url 'apertura-list' %}">Volver</a>
+        </div>
+    </form>
+</div>
+<template id="inventario-vacio">{% include "cajas/_inventario_linea.html" with form=formset.empty_form %}</template>
+{{ denominaciones|json_script:"denominaciones-data" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+    const boton = document.getElementById('agregar-linea');
+    if (!boton) return;
+    const denominaciones = JSON.parse(document.getElementById('denominaciones-data').textContent);
+    const monedas = new Map(denominaciones.map(d => [String(d.id), d.moneda_id]));
+    const lineas = document.getElementById('inventario-lineas');
+    const total = document.getElementById('id_inventario-TOTAL_FORMS');
+    const maximo = Number(document.getElementById('id_inventario-MAX_NUM_FORMS').value);
+    function preparar(fila) {
+        const moneda = fila.querySelector('.moneda');
+        const denominacion = fila.querySelector('.denominacion');
+        const opciones = Array.from(denominacion.options).map(o => o.cloneNode(true));
+        function filtrar() {
+            const anterior = denominacion.value;
+            denominacion.replaceChildren(...opciones.filter(o => !o.value || monedas.get(o.value) === moneda.value).map(o => o.cloneNode(true)));
+            denominacion.value = Array.from(denominacion.options).some(o => o.value === anterior) ? anterior : '';
+        }
+        moneda.addEventListener('change', filtrar);
+        filtrar();
+    }
+    lineas.querySelectorAll('.inventario-linea').forEach(preparar);
+    boton.disabled = Number(total.value) >= maximo;
+    boton.addEventListener('click', () => {
+        const indice = Number(total.value);
+        if (indice >= maximo) return;
+        lineas.insertAdjacentHTML('beforeend', document.getElementById('inventario-vacio').innerHTML.replaceAll('__prefix__', String(indice)));
+        preparar(lineas.lastElementChild);
+        total.value = indice + 1;
+        boton.disabled = Number(total.value) >= maximo;
+        lineas.lastElementChild.querySelector('select').focus();
+    });
+})();
+</script>
+{% endblock %}

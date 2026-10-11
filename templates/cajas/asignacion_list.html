@@ -1,0 +1,91 @@
+
+{% extends "base.html" %}
+
+{% block title %}Asignaciones de cajeros | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Asignaciones de cajeros</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'home' %}">Inicio</a>
+                    </li>
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'caja-list' %}">Cajas</a>
+                    </li>
+                    <li class="breadcrumb-item active">Asignaciones</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card card-primary card-outline">
+
+    <div class="card-header d-flex align-items-center justify-content-between">
+        <h3 class="card-title mb-0">Turnos asignados</h3>
+
+        <a href="{% url 'asignacion-create' %}"
+           class="btn btn-primary ms-auto">
+            Nueva asignación
+        </a>
+    </div>
+
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Sucursal</th>
+                        <th>Caja</th>
+                        <th>Cajero</th>
+                        <th>Turno</th>
+                        <th>Inicio programado</th>
+                        <th>Fin programado</th>
+                        <th>Asignado por</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for asignacion in asignaciones %}
+                    <tr>
+                        <td>{{ asignacion.caja.sucursal.nombre }}</td>
+                        <td>{{ asignacion.caja.nombre }}</td>
+                        <td>{{ asignacion.cajero_username }}</td>
+                        <td>{{ asignacion.turno }}</td>
+                        <td>
+                            {{ asignacion.fecha_inicio|date:"d/m/Y H:i" }}
+                        </td>
+                        <td>
+                            {{ asignacion.fecha_fin|date:"d/m/Y H:i" }}
+                        </td>
+                        <td>{{ asignacion.asignado_por.email|default:"Correo no disponible" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-secondary">
+                            No existen asignaciones registradas.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card-footer">
+        <a href="{% url 'caja-list' %}"
+           class="btn btn-outline-secondary">
+            Volver a cajas
+        </a>
+    </div>
+
+</div>
+{% endblock %}
