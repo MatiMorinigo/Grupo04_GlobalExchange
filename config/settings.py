@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "transacciones",
     "usuarios",
     "cajas.apps.CajasConfig",
+    "django.contrib.postgres",
 ]
 
 MIDDLEWARE = [
@@ -103,6 +104,12 @@ OIDC_OP_LOGOUT_ENDPOINT = os.getenv("OIDC_OP_LOGOUT_ENDPOINT")
 OIDC_STORE_ACCESS_TOKEN = True
 OIDC_STORE_ID_TOKEN = True
 OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 240
+
+# Keycloak Admin API - Gestión de cajeros
+KEYCLOAK_BASE_URL = os.getenv("KEYCLOAK_BASE_URL", "").rstrip("/")
+KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "")
+KEYCLOAK_SERVICE_CLIENT_ID = os.getenv("KEYCLOAK_SERVICE_CLIENT_ID", "")
+KEYCLOAK_SERVICE_CLIENT_SECRET = os.getenv("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
 
 # Redireccionamiento despues del login/logout
 LOGIN_REDIRECT_URL = "/"
