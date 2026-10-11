@@ -15,6 +15,7 @@ from cotizaciones.services import (
 from integrations.proveedores_pago import (
     MetodoPagoNoHabilitadoError,
     ProveedorPagoError,
+    StripeProveedor,
     get_proveedor,
 )
 
@@ -24,6 +25,7 @@ from .models import (
     EstadoPago,
     EstadoTransaccion,
     Pago,
+    ProveedorPago,
     TipoOperacion,
     Transaccion,
 )
@@ -654,3 +656,52 @@ def procesar_resultado_pago(proveedor_codigo, resultado):
             )
         pago.save(update_fields=campos + ["confirmado_en"])
         return ResultadoProcesamiento.CONFIRMADO
+
+
+def sincronizar_pagos_stripe(id_pago=None):
+    """Consulta a Stripe el resultado de los pagos que siguen sin confirmar.
+
+    Es el respaldo del webhook: sirve cuando la notificación no llegó (por
+    ejemplo, en desarrollo sin la Stripe CLI). Cada resultado obtenido se
+    aplica con ``procesar_resultado_pago``, igual que si viniera del webhook.
+
+    Args:
+        id_pago (int or None): Si se indica, solo se consulta ese pago.
+
+    Returns:
+        dict[str, int]: Cantidad de pagos ``consultados``, ``confirmados``,
+        ``rechazados``, ``sin_cambios`` (Stripe todavía no tiene un
+        resultado, o el pago ya estaba resuelto) y ``errores`` de
+        comunicación.
+    """
+    pagos = Pago.objects.filter(
+        proveedor=ProveedorPago.STRIPE,
+        estado__in=ESTADOS_PAGO_RESOLUBLES,
+        referencia_externa__isnull=False,
+    ).order_by("creado_en")
+    if id_pago is not None:
+        pagos = pagos.filter(pk=id_pago)
+
+    resumen = {"consultados": 0, "confirmados": 0, "rechazados": 0, "sin_cambios": 0, "errores": 0}
+    proveedor = StripeProveedor()
+    for pago in pagos:
+        resumen["consultados"] += 1
+        try:
+            resultado = proveedor.consultar_pago(pago)
+        except ProveedorPagoError as error:
+            logger.warning("No se pudo consultar el pago %s en Stripe: %s", pago.pk, error.detalle)
+            resumen["errores"] += 1
+            continue
+
+        if resultado is None:
+            resumen["sin_cambios"] += 1
+            continue
+
+        procesamiento = procesar_resultado_pago(pago.proveedor, resultado)
+        if procesamiento == ResultadoProcesamiento.CONFIRMADO:
+            resumen["confirmados"] += 1
+        elif procesamiento == ResultadoProcesamiento.RECHAZADO:
+            resumen["rechazados"] += 1
+        else:
+            resumen["sin_cambios"] += 1
+    return resumen
