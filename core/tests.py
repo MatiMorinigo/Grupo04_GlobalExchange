@@ -90,11 +90,18 @@ class HomeViewTests(SimpleTestCase):
 
     @override_settings(APP_ENV="Producción")
     def test_environment_indicator_is_hidden_in_production(self):
-        self.assertEqual(app_environment(None), {"app_environment": "", "es_administrador": False, "es_tesorero": False, "es_cajero": False, "rol_usuario": ""})
+        self.assertEqual(app_environment(None), {"app_environment": "", "es_administrador": False, "es_analista_cambiario": False, "es_tesorero": False, "es_cajero": False, "rol_usuario": ""})
 
     @override_settings(APP_ENV="Desarrollo")
     def test_environment_indicator_is_visible_outside_production(self):
-        self.assertEqual(app_environment(None), {"app_environment": "Desarrollo", "es_administrador": False, "es_tesorero": False, "es_cajero": False, "rol_usuario": ""})
+        self.assertEqual(app_environment(None), {"app_environment": "Desarrollo", "es_administrador": False, "es_analista_cambiario": False, "es_tesorero": False, "es_cajero": False, "rol_usuario": ""})
+
+    @patch("core.context_processors.obtener_roles", return_value=["analista_cambiario"])
+    def test_analista_cambiario_queda_identificado_para_el_menu(self, roles):
+        contexto = app_environment(object())
+
+        self.assertTrue(contexto["es_analista_cambiario"])
+        self.assertFalse(contexto["es_administrador"])
 
     @patch("core.keycloak.obtener_roles", return_value=["administrador"])
     @patch("core.context_processors.obtener_roles", return_value=["administrador"])

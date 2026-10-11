@@ -1,5 +1,7 @@
+import json
 from datetime import timedelta
 from decimal import Decimal
+from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -7,9 +9,10 @@ import stripe
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.db import IntegrityError
 from django.db.models import BigAutoField
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from .forms import VentaDivisaForm
@@ -26,6 +29,8 @@ from destinos.models import (
     TipoCuentaBancaria,
     TipoDestinoAcreditacion,
 )
+from integrations.proveedores_pago import ResultadoPago, SimuladorBilleteraProveedor
+from integrations.proveedores_pago.stripe_proveedor import a_unidad_minima
 from pagos.models import MetodoPago, TipoMetodoPago
 from usuarios.models import UsuarioCliente
 
@@ -41,10 +46,12 @@ from .models import (
 from .services import (
     OperacionCambiariaError,
     PagoNoIniciableError,
+    ResultadoProcesamiento,
     calcular_compra,
     crear_transaccion_compra,
     calcular_venta,
     iniciar_pago,
+    procesar_resultado_pago,
 )
 
 
@@ -2023,3 +2030,569 @@ class CambiarMetodoPagoVentaTests(PagoTestMixin, TestCase):
 
         self.assertFalse(response.context["puede_cambiar_metodo"])
         self.assertNotContains(response, 'name="metodo_pago"')
+
+
+# --- HU-18: confirmación automática de pago ---------------------------------
+
+SECRETO_WEBHOOK = "whsec_prueba"
+CONSULTAR_PAYMENT_INTENT = "integrations.proveedores_pago.stripe_proveedor.stripe.PaymentIntent.retrieve"
+
+
+def _resultado_de(pago, aprobado=True, **cambios):
+    """Construye el resultado que informaría el proveedor para un pago."""
+
+    datos = {
+        "referencia_externa": pago.referencia_externa,
+        "aprobado": aprobado,
+        "id_pago": pago.pk,
+        "monto": pago.monto,
+        "moneda": pago.moneda_id,
+        "detalle": "" if aprobado else "card_declined: Your card was declined.",
+    }
+    datos.update(cambios)
+    return ResultadoPago(**datos)
+
+
+def _payment_intent_de(pago, estado="succeeded"):
+    """PaymentIntent de Stripe que corresponde a un pago registrado."""
+
+    return {
+        "id": pago.referencia_externa,
+        "object": "payment_intent",
+        "status": estado,
+        "amount": a_unidad_minima(pago.monto, pago.moneda_id),
+        "currency": pago.moneda_id.lower(),
+        "metadata": {"id_pago": str(pago.pk), "id_transaccion": str(pago.transaccion_id)},
+        "last_payment_error": None,
+    }
+
+
+def _webhook_firmado(tipo, intento, secreto=SECRETO_WEBHOOK, id_evento="evt_1"):
+    payload = json.dumps(
+        {"id": id_evento, "object": "event", "type": tipo, "data": {"object": intento}}
+    )
+    return payload, stripe.WebhookSignature.generate_signature_header(payload, secreto)
+
+
+class ConfirmacionPagoTestMixin(PagoTestMixin):
+    """Agrega a los datos de pago helpers para iniciar pagos ya en proceso."""
+
+    def _iniciar_con_tarjeta(self, transaccion=None, referencia="pi_ok"):
+        transaccion = transaccion or self._crear_transaccion()
+        with patch(CREAR_PAYMENT_INTENT, return_value=_intento_aceptado(referencia)):
+            return iniciar_pago(transaccion, self.user)
+
+    def _iniciar_con_billetera(self, tipo=TipoOperacion.COMPRA):
+        transaccion = self._crear_transaccion(tipo=tipo, metodo_pago=self.billetera)
+        return iniciar_pago(transaccion, self.user)
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_dummy")
+class ProcesarResultadoPagoTests(ConfirmacionPagoTestMixin, TestCase):
+    """Prueba los criterios de aceptación de HU-18 sobre la función idempotente."""
+
+    def test_confirmacion_completa_la_operacion_y_registra_la_fecha(self):
+        pago = self._iniciar_con_tarjeta(referencia="pi_confirmado")
+
+        resultado = procesar_resultado_pago(ProveedorPago.STRIPE, _resultado_de(pago))
+
+        self.assertEqual(resultado, ResultadoProcesamiento.CONFIRMADO)
+        pago.refresh_from_db()
+        transaccion = pago.transaccion
+        transaccion.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.CONFIRMADO)
+        self.assertIsNotNone(pago.confirmado_en)
+        self.assertEqual(pago.referencia_externa, "pi_confirmado")
+        self.assertEqual(transaccion.estado, EstadoTransaccion.COMPLETADA)
+        self.assertEqual(transaccion.completada_en, pago.confirmado_en)
+
+    def test_notificacion_repetida_no_completa_dos_veces(self):
+        pago = self._iniciar_con_tarjeta()
+        procesar_resultado_pago(ProveedorPago.STRIPE, _resultado_de(pago))
+        pago.refresh_from_db()
+        transaccion = Transaccion.objects.get(pk=pago.transaccion_id)
+        confirmado_en, completada_en = pago.confirmado_en, transaccion.completada_en
+
+        resultado = procesar_resultado_pago(ProveedorPago.STRIPE, _resultado_de(pago))
+
+        self.assertEqual(resultado, ResultadoProcesamiento.DUPLICADO)
+        pago.refresh_from_db()
+        transaccion.refresh_from_db()
+        self.assertEqual(pago.confirmado_en, confirmado_en)
+        self.assertEqual(transaccion.completada_en, completada_en)
+
+    def test_rechazo_no_completa_la_operacion_y_permite_reintentar(self):
+        pago = self._iniciar_con_tarjeta()
+
+        resultado = procesar_resultado_pago(
+            ProveedorPago.STRIPE, _resultado_de(pago, aprobado=False)
+        )
+
+        self.assertEqual(resultado, ResultadoProcesamiento.RECHAZADO)
+        pago.refresh_from_db()
+        transaccion = Transaccion.objects.get(pk=pago.transaccion_id)
+        self.assertEqual(pago.estado, EstadoPago.RECHAZADO)
+        self.assertIsNone(pago.confirmado_en)
+        self.assertIn("card_declined", pago.mensaje_proveedor)
+        self.assertEqual(transaccion.estado, EstadoTransaccion.PENDIENTE)
+        self.assertIsNone(transaccion.completada_en)
+
+        nuevo = self._iniciar_con_tarjeta(transaccion, referencia="pi_reintento")
+        self.assertEqual(nuevo.estado, EstadoPago.EN_PROCESO)
+
+    def test_un_rechazo_despues_de_confirmar_no_cambia_nada(self):
+        pago = self._iniciar_con_tarjeta()
+        procesar_resultado_pago(ProveedorPago.STRIPE, _resultado_de(pago))
+
+        resultado = procesar_resultado_pago(
+            ProveedorPago.STRIPE, _resultado_de(pago, aprobado=False)
+        )
+
+        self.assertEqual(resultado, ResultadoProcesamiento.DUPLICADO)
+        self.assertEqual(Transaccion.objects.get(pk=pago.transaccion_id).estado, EstadoTransaccion.COMPLETADA)
+
+    def test_monto_distinto_no_se_acepta(self):
+        pago = self._iniciar_con_tarjeta()
+
+        resultado = procesar_resultado_pago(
+            ProveedorPago.STRIPE, _resultado_de(pago, monto=Decimal("1.00"))
+        )
+
+        self.assertEqual(resultado, ResultadoProcesamiento.INVALIDO)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+        self.assertEqual(
+            Transaccion.objects.get(pk=pago.transaccion_id).estado, EstadoTransaccion.PENDIENTE
+        )
+
+    def test_moneda_distinta_no_se_acepta(self):
+        pago = self._iniciar_con_tarjeta()
+
+        resultado = procesar_resultado_pago(ProveedorPago.STRIPE, _resultado_de(pago, moneda="USD"))
+
+        self.assertEqual(resultado, ResultadoProcesamiento.INVALIDO)
+
+    def test_referencia_distinta_no_se_acepta(self):
+        pago = self._iniciar_con_tarjeta(referencia="pi_original")
+
+        resultado = procesar_resultado_pago(
+            ProveedorPago.STRIPE, _resultado_de(pago, referencia_externa="pi_otro")
+        )
+
+        self.assertEqual(resultado, ResultadoProcesamiento.INVALIDO)
+        pago.refresh_from_db()
+        self.assertEqual(pago.referencia_externa, "pi_original")
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+
+    def test_pago_desconocido_se_ignora(self):
+        resultado = procesar_resultado_pago(
+            ProveedorPago.STRIPE,
+            ResultadoPago(referencia_externa="pi_ajeno", aprobado=True),
+        )
+
+        self.assertEqual(resultado, ResultadoProcesamiento.IGNORADO)
+
+    def test_resultado_de_otro_proveedor_no_afecta_al_pago(self):
+        pago = self._iniciar_con_tarjeta()
+
+        resultado = procesar_resultado_pago(ProveedorPago.SIMULADOR_BILLETERA, _resultado_de(pago))
+
+        self.assertEqual(resultado, ResultadoProcesamiento.IGNORADO)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+
+    def test_pago_con_error_de_comunicacion_puede_confirmarse_despues(self):
+        transaccion = self._crear_transaccion()
+        with patch(CREAR_PAYMENT_INTENT, side_effect=stripe.APIConnectionError("timeout")):
+            with self.assertRaises(PagoNoIniciableError):
+                iniciar_pago(transaccion, self.user)
+        pago = transaccion.pagos.get()
+
+        resultado = procesar_resultado_pago(
+            ProveedorPago.STRIPE, _resultado_de(pago, referencia_externa="pi_tardio")
+        )
+
+        self.assertEqual(resultado, ResultadoProcesamiento.CONFIRMADO)
+        pago.refresh_from_db()
+        self.assertEqual(pago.referencia_externa, "pi_tardio")
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.estado, EstadoTransaccion.COMPLETADA)
+
+    def test_confirmacion_sobre_operacion_no_pendiente_queda_para_revision(self):
+        pago = self._iniciar_con_tarjeta()
+        Transaccion.objects.filter(pk=pago.transaccion_id).update(
+            estado=EstadoTransaccion.CANCELADA,
+            cancelada_en=timezone.now(),
+            etapa_cancelacion=EtapaCancelacion.PREVIA_PAGO,
+        )
+
+        resultado = procesar_resultado_pago(ProveedorPago.STRIPE, _resultado_de(pago))
+
+        self.assertEqual(resultado, ResultadoProcesamiento.CONFIRMADO)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.CONFIRMADO)
+        self.assertIn("requiere revisión", pago.mensaje_proveedor)
+        transaccion = Transaccion.objects.get(pk=pago.transaccion_id)
+        self.assertEqual(transaccion.estado, EstadoTransaccion.CANCELADA)
+        self.assertIsNone(transaccion.completada_en)
+
+    def test_confirmacion_temprana_no_es_pisada_al_terminar_de_iniciar_el_pago(self):
+        transaccion = self._crear_transaccion()
+
+        def crear_y_notificar(**kwargs):
+            # El webhook llega antes de que Stripe responda a la creación del cobro.
+            id_pago = int(kwargs["metadata"]["id_pago"])
+            pago = Pago.objects.get(pk=id_pago)
+            procesar_resultado_pago(
+                ProveedorPago.STRIPE,
+                ResultadoPago(
+                    referencia_externa="pi_temprano",
+                    aprobado=True,
+                    id_pago=id_pago,
+                    monto=pago.monto,
+                    moneda=pago.moneda_id,
+                ),
+            )
+            return _intento_aceptado("pi_temprano")
+
+        with patch(CREAR_PAYMENT_INTENT, side_effect=crear_y_notificar):
+            pago = iniciar_pago(transaccion, self.user)
+
+        self.assertEqual(pago.estado, EstadoPago.CONFIRMADO)
+        self.assertEqual(pago.referencia_externa, "pi_temprano")
+        transaccion.refresh_from_db()
+        self.assertEqual(transaccion.estado, EstadoTransaccion.COMPLETADA)
+
+    def test_billetera_aprobada_completa_una_venta(self):
+        pago = self._iniciar_con_billetera(tipo=TipoOperacion.VENTA)
+
+        resultado = procesar_resultado_pago(
+            ProveedorPago.SIMULADOR_BILLETERA,
+            SimuladorBilleteraProveedor().resultado_simulado(pago, aprobado=True),
+        )
+
+        self.assertEqual(resultado, ResultadoProcesamiento.CONFIRMADO)
+        self.assertEqual(
+            Transaccion.objects.get(pk=pago.transaccion_id).estado, EstadoTransaccion.COMPLETADA
+        )
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_dummy", STRIPE_WEBHOOK_SECRET=SECRETO_WEBHOOK)
+class WebhookStripeTests(ConfirmacionPagoTestMixin, TestCase):
+    """Prueba el endpoint que recibe las notificaciones de Stripe."""
+
+    def setUp(self):
+        super().setUp()
+        # Stripe no envía sesión ni token CSRF.
+        self.stripe = Client(enforce_csrf_checks=True)
+
+    def _enviar(self, payload, firma):
+        return self.stripe.post(
+            reverse("webhook-stripe"),
+            data=payload,
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE=firma,
+            HTTP_HOST="127.0.0.1",
+        )
+
+    def test_pago_aprobado_completa_la_operacion(self):
+        pago = self._iniciar_con_tarjeta()
+
+        response = self._enviar(*_webhook_firmado("payment_intent.succeeded", _payment_intent_de(pago)))
+
+        self.assertEqual(response.status_code, 200)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.CONFIRMADO)
+        self.assertEqual(
+            Transaccion.objects.get(pk=pago.transaccion_id).estado, EstadoTransaccion.COMPLETADA
+        )
+
+    def test_evento_reenviado_no_completa_dos_veces(self):
+        pago = self._iniciar_con_tarjeta()
+        evento = _webhook_firmado("payment_intent.succeeded", _payment_intent_de(pago))
+        self._enviar(*evento)
+        completada_en = Transaccion.objects.get(pk=pago.transaccion_id).completada_en
+
+        response = self._enviar(*evento)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            Transaccion.objects.get(pk=pago.transaccion_id).completada_en, completada_en
+        )
+
+    def test_pago_rechazado_deja_la_operacion_pendiente(self):
+        pago = self._iniciar_con_tarjeta()
+        intento = _payment_intent_de(pago, estado="requires_payment_method")
+        intento["last_payment_error"] = {"code": "card_declined", "decline_code": "generic_decline",
+                                         "message": "Your card was declined."}
+
+        response = self._enviar(*_webhook_firmado("payment_intent.payment_failed", intento))
+
+        self.assertEqual(response.status_code, 200)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.RECHAZADO)
+        self.assertEqual(
+            Transaccion.objects.get(pk=pago.transaccion_id).estado, EstadoTransaccion.PENDIENTE
+        )
+
+    def test_firma_invalida_responde_400_sin_cambios(self):
+        pago = self._iniciar_con_tarjeta()
+        payload, firma = _webhook_firmado(
+            "payment_intent.succeeded", _payment_intent_de(pago), secreto="whsec_falso"
+        )
+
+        response = self._enviar(payload, firma)
+
+        self.assertEqual(response.status_code, 400)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+
+    def test_sin_firma_responde_400(self):
+        payload, _ = _webhook_firmado("payment_intent.succeeded", {"id": "pi_x"})
+
+        response = self._enviar(payload, "")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_evento_irrelevante_responde_200(self):
+        response = self._enviar(*_webhook_firmado("customer.created", {"id": "cus_1", "object": "customer"}))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_pago_ajeno_al_sistema_responde_200_sin_cambios(self):
+        intento = {"id": "pi_trigger", "object": "payment_intent", "status": "succeeded",
+                   "amount": 2000, "currency": "usd", "metadata": {}, "last_payment_error": None}
+
+        response = self._enviar(*_webhook_firmado("payment_intent.succeeded", intento))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Pago.objects.filter(estado=EstadoPago.CONFIRMADO).exists())
+
+    def test_solo_acepta_post(self):
+        response = self.stripe.get(reverse("webhook-stripe"), HTTP_HOST="127.0.0.1")
+
+        self.assertEqual(response.status_code, 405)
+
+
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC, STRIPE_SECRET_KEY="sk_test_dummy")
+class PagosSimuladosWebTests(ConfirmacionPagoTestMixin, TestCase):
+    """Prueba la pantalla en la que analistas y administradores resuelven pagos simulados."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+
+    def _como(self, *roles):
+        return patch("core.mixins.tiene_rol", side_effect=lambda request, rol: rol in roles)
+
+    def _resolver(self, pago, accion, *roles):
+        with self._como(*roles or ("analista_cambiario",)):
+            return self.client.post(
+                reverse("pago-simulado-resolver", args=[pago.pk]),
+                {"accion": accion},
+                HTTP_HOST="127.0.0.1",
+            )
+
+    def _mensajes(self, response):
+        return [str(mensaje) for mensaje in response.wsgi_request._messages]
+
+    def test_analista_ve_los_pagos_simulados_en_proceso(self):
+        pendiente = self._iniciar_con_billetera()
+        self._iniciar_con_tarjeta()
+
+        with self._como("analista_cambiario"):
+            response = self.client.get(reverse("pago-simulado-list"), HTTP_HOST="127.0.0.1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["pagos"]), [pendiente])
+        self.assertContains(response, pendiente.referencia_externa)
+
+    def test_administrador_tambien_accede(self):
+        with self._como("administrador"):
+            response = self.client.get(reverse("pago-simulado-list"), HTTP_HOST="127.0.0.1")
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_usuario_sin_rol_no_accede(self):
+        pago = self._iniciar_con_billetera()
+
+        with self._como():
+            listado = self.client.get(reverse("pago-simulado-list"), HTTP_HOST="127.0.0.1")
+        respuesta = self._resolver(pago, "aprobar", "usuario")
+
+        self.assertEqual(listado.status_code, 403)
+        self.assertEqual(respuesta.status_code, 403)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+
+    def test_aprobar_completa_la_operacion(self):
+        pago = self._iniciar_con_billetera()
+
+        response = self._resolver(pago, "aprobar")
+
+        self.assertRedirects(response, reverse("pago-simulado-list"), fetch_redirect_response=False)
+        self.assertTrue(any("quedó completada" in mensaje for mensaje in self._mensajes(response)))
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.CONFIRMADO)
+        self.assertEqual(
+            Transaccion.objects.get(pk=pago.transaccion_id).estado, EstadoTransaccion.COMPLETADA
+        )
+
+    def test_rechazar_deja_la_operacion_pendiente(self):
+        pago = self._iniciar_con_billetera()
+
+        response = self._resolver(pago, "rechazar")
+
+        self.assertTrue(any("sigue pendiente" in mensaje for mensaje in self._mensajes(response)))
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.RECHAZADO)
+        self.assertIn(self.user.username, pago.mensaje_proveedor)
+        self.assertEqual(
+            Transaccion.objects.get(pk=pago.transaccion_id).estado, EstadoTransaccion.PENDIENTE
+        )
+
+    def test_resolver_dos_veces_no_tiene_efecto(self):
+        pago = self._iniciar_con_billetera()
+        self._resolver(pago, "aprobar")
+
+        response = self._resolver(pago, "rechazar")
+
+        self.assertTrue(any("ya había sido resuelto" in mensaje for mensaje in self._mensajes(response)))
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.CONFIRMADO)
+
+    def test_un_pago_de_stripe_no_se_resuelve_desde_el_simulador(self):
+        pago = self._iniciar_con_tarjeta()
+
+        response = self._resolver(pago, "aprobar")
+
+        self.assertEqual(response.status_code, 404)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+
+    def test_accion_invalida_no_modifica_el_pago(self):
+        pago = self._iniciar_con_billetera()
+
+        response = self._resolver(pago, "borrar")
+
+        self.assertTrue(any("Acción no válida" in mensaje for mensaje in self._mensajes(response)))
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+
+
+@override_settings(MIDDLEWARE=MIDDLEWARE_SIN_OIDC, STRIPE_SECRET_KEY="sk_test_dummy")
+class DetalleConfirmacionPagoTests(ConfirmacionPagoTestMixin, TestCase):
+    """Prueba cómo el detalle de la operación informa la confirmación del pago."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+
+    def _detalle(self, transaccion_id):
+        with patch("transacciones.views.tiene_rol", return_value=False):
+            return self.client.get(
+                reverse("transaccion-web-detail", args=[transaccion_id]),
+                HTTP_HOST="127.0.0.1",
+            )
+
+    def test_con_pago_en_proceso_la_pagina_se_actualiza_sola(self):
+        pago = self._iniciar_con_tarjeta()
+
+        response = self._detalle(pago.transaccion_id)
+
+        self.assertContains(response, 'http-equiv="refresh"')
+
+    def test_pago_confirmado_se_muestra_con_su_fecha(self):
+        pago = self._iniciar_con_tarjeta(referencia="pi_detalle")
+        procesar_resultado_pago(ProveedorPago.STRIPE, _resultado_de(pago))
+
+        response = self._detalle(pago.transaccion_id)
+
+        self.assertEqual(response.context["pago_confirmado"].pk, pago.pk)
+        self.assertContains(response, "Pago confirmado por Stripe")
+        self.assertContains(response, "pi_detalle")
+        self.assertContains(response, "COMPLETADA")
+        self.assertNotContains(response, 'http-equiv="refresh"')
+        self.assertFalse(response.context["puede_iniciar_pago"])
+
+    def test_pago_simulado_en_proceso_informa_que_espera_la_billetera(self):
+        pago = self._iniciar_con_billetera()
+
+        response = self._detalle(pago.transaccion_id)
+
+        self.assertContains(response, "Esperando la aprobación del pago en la billetera")
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_dummy")
+class SincronizarPagosComandoTests(ConfirmacionPagoTestMixin, TestCase):
+    """Prueba el comando de respaldo que consulta los pagos en Stripe."""
+
+    def _ejecutar(self, *args):
+        salida = StringIO()
+        call_command("sincronizar_pagos", *args, stdout=salida)
+        return salida.getvalue()
+
+    def test_pago_cobrado_en_stripe_se_confirma(self):
+        pago = self._iniciar_con_tarjeta()
+
+        with patch(CONSULTAR_PAYMENT_INTENT, return_value=_payment_intent_de(pago)):
+            salida = self._ejecutar()
+
+        self.assertIn("Confirmados: 1", salida)
+        self.assertEqual(
+            Transaccion.objects.get(pk=pago.transaccion_id).estado, EstadoTransaccion.COMPLETADA
+        )
+
+    def test_pago_todavia_en_proceso_queda_sin_cambios(self):
+        pago = self._iniciar_con_tarjeta()
+
+        with patch(CONSULTAR_PAYMENT_INTENT, return_value=_payment_intent_de(pago, estado="processing")):
+            salida = self._ejecutar()
+
+        self.assertIn("Sin cambios: 1", salida)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+
+    def test_pago_rechazado_en_stripe_se_registra(self):
+        pago = self._iniciar_con_tarjeta()
+
+        with patch(
+            CONSULTAR_PAYMENT_INTENT,
+            return_value=_payment_intent_de(pago, estado="requires_payment_method"),
+        ):
+            salida = self._ejecutar()
+
+        self.assertIn("Rechazados: 1", salida)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.RECHAZADO)
+
+    def test_error_de_comunicacion_se_informa_y_no_cambia_el_pago(self):
+        pago = self._iniciar_con_tarjeta()
+
+        with patch(CONSULTAR_PAYMENT_INTENT, side_effect=stripe.APIConnectionError("timeout")):
+            salida = self._ejecutar()
+
+        self.assertIn("Errores: 1", salida)
+        pago.refresh_from_db()
+        self.assertEqual(pago.estado, EstadoPago.EN_PROCESO)
+
+    def test_no_consulta_pagos_del_simulador_ni_ya_resueltos(self):
+        self._iniciar_con_billetera()
+        confirmado = self._iniciar_con_tarjeta(referencia="pi_ya_confirmado")
+        procesar_resultado_pago(ProveedorPago.STRIPE, _resultado_de(confirmado))
+
+        with patch(CONSULTAR_PAYMENT_INTENT) as consultar:
+            salida = self._ejecutar()
+
+        consultar.assert_not_called()
+        self.assertIn("Pagos consultados: 0", salida)
+
+    def test_puede_limitarse_a_un_pago(self):
+        primero = self._iniciar_con_tarjeta(referencia="pi_primero")
+        self._iniciar_con_tarjeta(referencia="pi_segundo")
+
+        with patch(CONSULTAR_PAYMENT_INTENT, return_value=_payment_intent_de(primero)) as consultar:
+            salida = self._ejecutar("--id-pago", str(primero.pk))
+
+        self.assertEqual(consultar.call_count, 1)
+        self.assertIn("Pagos consultados: 1", salida)

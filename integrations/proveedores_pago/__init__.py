@@ -7,10 +7,12 @@ tipo de método de pago.
 from pagos.models import TipoMetodoPago
 
 from .base import (
+    ConfirmacionInvalidaError,
     MetodoPagoNoHabilitadoError,
     ProveedorPagoBase,
     ProveedorPagoError,
     ResultadoInicioPago,
+    ResultadoPago,
 )
 from .simulador_billetera import SimuladorBilleteraProveedor
 from .stripe_proveedor import StripeProveedor
@@ -44,10 +46,12 @@ def get_proveedor(metodo_pago):
 
 
 __all__ = [
+    "ConfirmacionInvalidaError",
     "MetodoPagoNoHabilitadoError",
     "ProveedorPagoBase",
     "ProveedorPagoError",
     "ResultadoInicioPago",
+    "ResultadoPago",
     "SimuladorBilleteraProveedor",
     "StripeProveedor",
     "get_proveedor",

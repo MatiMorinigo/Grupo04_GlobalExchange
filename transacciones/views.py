@@ -1,21 +1,38 @@
+import logging
 from functools import cached_property
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from django.views.generic import DetailView, FormView, ListView
 
 from core.keycloak import tiene_rol
-from core.mixins import ClienteActivoRequiredMixin
+from core.mixins import AnalistaCambiarioRequiredMixin, ClienteActivoRequiredMixin
+from integrations.proveedores_pago import (
+    ConfirmacionInvalidaError,
+    SimuladorBilleteraProveedor,
+    StripeProveedor,
+)
 from pagos.models import MetodoPago
 from usuarios.models import obtener_cliente_activo
 
 from .forms import CompraDivisaForm, HistorialTransaccionFiltroForm, VentaDivisaForm
-from .models import ESTADOS_PAGO_ACTIVOS, EstadoPago, EstadoTransaccion, Transaccion
+from .models import (
+    ESTADOS_PAGO_ACTIVOS,
+    EstadoPago,
+    EstadoTransaccion,
+    Pago,
+    ProveedorPago,
+    Transaccion,
+)
 from .services import (
     OperacionCambiariaError,
     PagoNoIniciableError,
+    ResultadoProcesamiento,
     calcular_compra,
     calcular_venta,
     crear_transaccion_compra,
@@ -25,7 +42,11 @@ from .services import (
     metodo_permite_pagar,
     obtener_tasa_vigente_compra,
     obtener_tasa_vigente_venta,
+    procesar_resultado_pago,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class CompraDivisaWebCreateView(ClienteActivoRequiredMixin, FormView):
@@ -497,6 +518,9 @@ class TransaccionWebDetailView(AccesoHistorialTransaccionMixin, DetailView):
 
         pagos = list(transaccion.pagos.select_related("moneda", "metodo_pago"))
         pago_activo = next((pago for pago in pagos if pago.estado in ESTADOS_PAGO_ACTIVOS), None)
+        pago_confirmado = next(
+            (pago for pago in pagos if pago.estado == EstadoPago.CONFIRMADO), None
+        )
         monto_pago, moneda_pago = importe_a_cobrar(transaccion)
         es_cliente_de_la_operacion = (
             self.cliente_activo is not None
@@ -523,6 +547,7 @@ class TransaccionWebDetailView(AccesoHistorialTransaccionMixin, DetailView):
             {
                 "pagos": pagos,
                 "pago_activo": pago_activo,
+                "pago_confirmado": pago_confirmado,
                 "monto_pago": monto_pago,
                 "moneda_pago": moneda_pago,
                 "puede_iniciar_pago": puede_iniciar_pago,
@@ -600,3 +625,122 @@ class TransaccionIniciarPagoView(ClienteActivoRequiredMixin, View):
                 "cuando el proveedor confirme el pago.",
             )
         return redirect("transaccion-web-detail", id_transaccion=id_transaccion)
+
+
+@csrf_exempt
+@require_POST
+def webhook_stripe(request):
+    """Recibe las notificaciones de Stripe sobre el resultado de los pagos.
+
+    Stripe no envía token CSRF ni sesión: la autenticidad se comprueba con
+    la firma del encabezado ``Stripe-Signature``. Una notificación con firma
+    inválida responde 400 y no modifica nada. Las válidas responden 200 aun
+    cuando no cambian ningún pago (evento ajeno, repetido o con datos que
+    no coinciden), para que Stripe no las reintente.
+
+    Args:
+        request (django.http.HttpRequest): Solicitud enviada por Stripe.
+
+    Returns:
+        django.http.HttpResponse: Respuesta vacía con el código de estado.
+    """
+    try:
+        resultado = StripeProveedor().interpretar_evento(
+            request.body,
+            request.META.get("HTTP_STRIPE_SIGNATURE", ""),
+        )
+    except ConfirmacionInvalidaError as error:
+        logger.warning("Webhook de Stripe rechazado: %s", error)
+        return HttpResponse(status=400)
+
+    if resultado is None:
+        return HttpResponse(status=200)
+
+    procesamiento = procesar_resultado_pago(ProveedorPago.STRIPE, resultado)
+    logger.info(
+        "Webhook de Stripe para %s procesado: %s.",
+        resultado.referencia_externa,
+        procesamiento,
+    )
+    return HttpResponse(status=200)
+
+
+class PagoSimuladoListView(LoginRequiredMixin, AnalistaCambiarioRequiredMixin, ListView):
+    """Lista los pagos con billetera simulada que esperan aprobación o rechazo.
+
+    Solo pueden verla analistas cambiarios y administradores, que hacen las
+    veces de la billetera del cliente.
+    """
+
+    model = Pago
+    template_name = "transacciones/pagos_simulados.html"
+    context_object_name = "pagos"
+
+    def get_queryset(self):
+        """Devuelve los pagos simulados en proceso, del más antiguo al más reciente."""
+
+        return (
+            Pago.objects.filter(
+                proveedor=ProveedorPago.SIMULADOR_BILLETERA,
+                estado=EstadoPago.EN_PROCESO,
+            )
+            .select_related("transaccion__cliente", "metodo_pago", "moneda")
+            .order_by("creado_en")
+        )
+
+    def get_context_data(self, **kwargs):
+        """Marca la entrada del menú de pagos simulados como activa."""
+
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "pagos_simulados"
+        return context
+
+
+class PagoSimuladoResolverView(LoginRequiredMixin, AnalistaCambiarioRequiredMixin, View):
+    """Aprueba o rechaza un pago de la billetera simulada.
+
+    La respuesta se aplica con ``procesar_resultado_pago``, la misma función
+    que procesa los webhooks de Stripe, por lo que resolver dos veces el
+    mismo pago no tiene efecto.
+    """
+
+    http_method_names = ["post"]
+
+    def post(self, request, id_pago):
+        """Aplica la decisión indicada en el formulario y vuelve al listado.
+
+        Args:
+            request (django.http.HttpRequest): Solicitud con el campo
+                ``accion`` (``aprobar`` o ``rechazar``).
+            id_pago (int): Pago del simulador a resolver.
+
+        Returns:
+            django.http.HttpResponse: Redirección al listado con el resultado.
+        """
+        pago = get_object_or_404(
+            Pago, pk=id_pago, proveedor=ProveedorPago.SIMULADOR_BILLETERA
+        )
+        accion = request.POST.get("accion")
+        if accion not in ("aprobar", "rechazar"):
+            messages.error(request, "Acción no válida para el pago simulado.")
+            return redirect("pago-simulado-list")
+
+        resultado = SimuladorBilleteraProveedor().resultado_simulado(
+            pago, aprobado=accion == "aprobar", usuario=request.user
+        )
+        procesamiento = procesar_resultado_pago(ProveedorPago.SIMULADOR_BILLETERA, resultado)
+        operacion = pago.transaccion_id
+
+        if procesamiento == ResultadoProcesamiento.CONFIRMADO:
+            messages.success(
+                request, f"Pago {pago.referencia_externa} aprobado. La operación {operacion} quedó completada."
+            )
+        elif procesamiento == ResultadoProcesamiento.RECHAZADO:
+            messages.warning(
+                request, f"Pago {pago.referencia_externa} rechazado. La operación {operacion} sigue pendiente."
+            )
+        elif procesamiento == ResultadoProcesamiento.DUPLICADO:
+            messages.info(request, f"El pago {pago.referencia_externa} ya había sido resuelto.")
+        else:
+            messages.error(request, f"No se pudo procesar el pago {pago.referencia_externa}.")
+        return redirect("pago-simulado-list")

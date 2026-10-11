@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -9,6 +10,7 @@ from pagos.models import MetodoPago, TipoMetodoPago
 from transacciones.models import ProveedorPago
 
 from .proveedores_pago import (
+    ConfirmacionInvalidaError,
     MetodoPagoNoHabilitadoError,
     ProveedorPagoBase,
     ProveedorPagoError,
@@ -16,7 +18,7 @@ from .proveedores_pago import (
     StripeProveedor,
     get_proveedor,
 )
-from .proveedores_pago.stripe_proveedor import a_unidad_minima
+from .proveedores_pago.stripe_proveedor import a_unidad_minima, desde_unidad_minima
 
 
 CREAR_PAYMENT_INTENT = "integrations.proveedores_pago.stripe_proveedor.stripe.PaymentIntent.create"
@@ -211,3 +213,166 @@ class SimuladorBilleteraTests(SimpleTestCase):
         self.assertTrue(primera.referencia_externa.startswith("SIM-"))
         self.assertNotEqual(primera.referencia_externa, segunda.referencia_externa)
         self.assertEqual(primera.estado_proveedor, "pendiente_aprobacion")
+
+
+SECRETO_WEBHOOK = "whsec_prueba"
+CONSULTAR_PAYMENT_INTENT = "integrations.proveedores_pago.stripe_proveedor.stripe.PaymentIntent.retrieve"
+
+
+def _intento(estado="succeeded", id_pago="7", monto=742350, moneda="pyg", error=None):
+    """Construye un PaymentIntent mínimo como lo envía Stripe."""
+
+    return {
+        "id": "pi_123",
+        "object": "payment_intent",
+        "status": estado,
+        "amount": monto,
+        "currency": moneda,
+        "metadata": {"id_pago": id_pago, "id_transaccion": "42"} if id_pago else {},
+        "last_payment_error": error,
+    }
+
+
+def _evento_firmado(tipo, intento, secreto=SECRETO_WEBHOOK):
+    """Devuelve el cuerpo y el encabezado de firma de un evento de Stripe."""
+
+    payload = json.dumps(
+        {"id": "evt_1", "object": "event", "type": tipo, "data": {"object": intento}}
+    )
+    firma = stripe.WebhookSignature.generate_signature_header(payload, secreto)
+    return payload.encode(), firma
+
+
+@override_settings(STRIPE_WEBHOOK_SECRET=SECRETO_WEBHOOK)
+class InterpretarEventoStripeTests(SimpleTestCase):
+    """Prueba la validación de los webhooks de Stripe."""
+
+    def test_pago_aprobado_devuelve_el_resultado_del_payment_intent(self):
+        payload, firma = _evento_firmado("payment_intent.succeeded", _intento())
+
+        resultado = StripeProveedor().interpretar_evento(payload, firma)
+
+        self.assertTrue(resultado.aprobado)
+        self.assertEqual(resultado.referencia_externa, "pi_123")
+        self.assertEqual(resultado.id_pago, 7)
+        self.assertEqual(resultado.monto, Decimal("742350.00"))
+        self.assertEqual(resultado.moneda, "PYG")
+        self.assertEqual(resultado.detalle, "")
+
+    def test_pago_rechazado_incluye_el_motivo(self):
+        error = {"code": "card_declined", "decline_code": "insufficient_funds",
+                 "message": "Your card has insufficient funds."}
+        payload, firma = _evento_firmado(
+            "payment_intent.payment_failed",
+            _intento(estado="requires_payment_method", monto=10000, moneda="usd", error=error),
+        )
+
+        resultado = StripeProveedor().interpretar_evento(payload, firma)
+
+        self.assertFalse(resultado.aprobado)
+        self.assertEqual(resultado.monto, Decimal("100.00"))
+        self.assertEqual(resultado.moneda, "USD")
+        self.assertIn("insufficient_funds", resultado.detalle)
+
+    def test_firma_invalida_no_se_acepta(self):
+        payload, firma = _evento_firmado("payment_intent.succeeded", _intento(), secreto="whsec_otro")
+
+        with self.assertRaises(ConfirmacionInvalidaError):
+            StripeProveedor().interpretar_evento(payload, firma)
+
+    def test_payload_alterado_no_se_acepta(self):
+        payload, firma = _evento_firmado("payment_intent.succeeded", _intento())
+
+        with self.assertRaises(ConfirmacionInvalidaError):
+            StripeProveedor().interpretar_evento(payload.replace(b"742350", b"1"), firma)
+
+    @override_settings(STRIPE_WEBHOOK_SECRET="")
+    def test_sin_secreto_configurado_no_se_acepta(self):
+        payload, firma = _evento_firmado("payment_intent.succeeded", _intento())
+
+        with self.assertRaisesMessage(ConfirmacionInvalidaError, "no está configurado"):
+            StripeProveedor().interpretar_evento(payload, firma)
+
+    def test_otros_eventos_se_ignoran(self):
+        payload, firma = _evento_firmado("charge.refunded", {"id": "ch_1", "object": "charge"})
+
+        self.assertIsNone(StripeProveedor().interpretar_evento(payload, firma))
+
+    def test_evento_sin_id_pago_devuelve_resultado_sin_id(self):
+        payload, firma = _evento_firmado("payment_intent.succeeded", _intento(id_pago=None))
+
+        resultado = StripeProveedor().interpretar_evento(payload, firma)
+
+        self.assertIsNone(resultado.id_pago)
+
+
+class DesdeUnidadMinimaTests(SimpleTestCase):
+    """Prueba la conversión inversa de los importes de Stripe."""
+
+    def test_convierte_guaranies_y_centavos(self):
+        self.assertEqual(desde_unidad_minima(742351, "PYG"), Decimal("742351.00"))
+        self.assertEqual(desde_unidad_minima(1025, "usd"), Decimal("10.25"))
+
+    def test_es_la_inversa_de_a_unidad_minima(self):
+        for monto, moneda in ((Decimal("10.25"), "USD"), (Decimal("1500.00"), "PYG")):
+            with self.subTest(moneda=moneda):
+                self.assertEqual(desde_unidad_minima(a_unidad_minima(monto, moneda), moneda), monto)
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_dummy")
+class ConsultarPagoStripeTests(SimpleTestCase):
+    """Prueba la consulta de respaldo del estado de un pago en Stripe."""
+
+    def _consultar(self, **retorno):
+        with patch(CONSULTAR_PAYMENT_INTENT, **retorno) as consultar:
+            resultado = StripeProveedor().consultar_pago(SimpleNamespace(referencia_externa="pi_123"))
+        return resultado, consultar
+
+    def test_pago_cobrado_se_informa_como_aprobado(self):
+        resultado, consultar = self._consultar(return_value=_intento())
+
+        self.assertTrue(resultado.aprobado)
+        self.assertEqual(consultar.call_args.args, ("pi_123",))
+        self.assertEqual(consultar.call_args.kwargs["api_key"], "sk_test_dummy")
+
+    def test_pago_rechazado_se_informa_como_rechazado(self):
+        resultado, _ = self._consultar(return_value=_intento(estado="requires_payment_method"))
+
+        self.assertFalse(resultado.aprobado)
+
+    def test_pago_en_proceso_no_tiene_resultado(self):
+        resultado, _ = self._consultar(return_value=_intento(estado="processing"))
+
+        self.assertIsNone(resultado)
+
+    def test_error_de_comunicacion_se_informa(self):
+        with self.assertRaises(ProveedorPagoError):
+            self._consultar(side_effect=stripe.APIConnectionError("timeout"))
+
+
+class ResultadoSimuladoTests(SimpleTestCase):
+    """Prueba la respuesta de la billetera simulada."""
+
+    def _pago(self):
+        return SimpleNamespace(
+            id_pago=9, referencia_externa="SIM-ABC", monto=Decimal("1000.00"), moneda_id="PYG"
+        )
+
+    def test_aprobacion_usa_los_datos_del_pago(self):
+        resultado = SimuladorBilleteraProveedor().resultado_simulado(self._pago(), aprobado=True)
+
+        self.assertTrue(resultado.aprobado)
+        self.assertEqual(resultado.id_pago, 9)
+        self.assertEqual(resultado.referencia_externa, "SIM-ABC")
+        self.assertEqual(resultado.monto, Decimal("1000.00"))
+        self.assertEqual(resultado.detalle, "")
+
+    def test_rechazo_deja_constancia_del_usuario(self):
+        usuario = SimpleNamespace(get_username=lambda: "analista1")
+
+        resultado = SimuladorBilleteraProveedor().resultado_simulado(
+            self._pago(), aprobado=False, usuario=usuario
+        )
+
+        self.assertFalse(resultado.aprobado)
+        self.assertIn("analista1", resultado.detalle)

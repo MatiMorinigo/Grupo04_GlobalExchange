@@ -48,3 +48,10 @@ Administración
    :members:
    :undoc-members:
    :show-inheritance:
+
+Comandos
+--------
+
+.. automodule:: transacciones.management.commands.sincronizar_pagos
+   :members:
+   :show-inheritance:

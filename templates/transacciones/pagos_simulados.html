@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Pagos simulados | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">Pagos simulados</h3>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-end mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'home' %}">Inicio</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Pagos simulados</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    Los pagos con billetera electrónica se procesan con un proveedor simulado.
+    Aprobar o rechazar un pago equivale a la respuesta que enviaría la billetera:
+    al aprobarlo, la operación del cliente queda completada; al rechazarlo, sigue
+    pendiente y el cliente puede volver a intentarlo.
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title mb-0">Pagos esperando respuesta</h3>
+    </div>
+    <div class="card-body p-0">
+        {% if pagos %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Fecha y hora</th>
+                        <th>Operación</th>
+                        <th>Cliente</th>
+                        <th>Billetera</th>
+                        <th class="text-end">Monto</th>
+                        <th>Referencia</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pago in pagos %}
+                    <tr>
+                        <td class="text-nowrap">{{ pago.creado_en|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            <a href="{% url 'transaccion-web-detail' pago.transaccion_id %}">
+                                N.º {{ pago.transaccion_id }}
+                            </a>
+                            <div class="small text-secondary">{{ pago.transaccion.get_tipo_operacion_display }}</div>
+                        </td>
+                        <td>
+                            {{ pago.transaccion.cliente.nombre }}
+                            <div class="small text-secondary">{{ pago.transaccion.cliente.ruc }}</div>
+                        </td>
+                        <td>
+                            {% if pago.metodo_pago %}
+                            {{ pago.metodo_pago.identificacion }}
+                            {% else %}
+                            Sin definir
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap fw-semibold">
+                            {{ pago.monto|formato_numero:2 }} {{ pago.moneda_id }}
+                        </td>
+                        <td><code>{{ pago.referencia_externa }}</code></td>
+                        <td class="text-nowrap">
+                            <form method="post" action="{% url 'pago-simulado-resolver' pago.id_pago %}" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="accion" value="aprobar">
+                                <button type="submit" class="btn btn-sm btn-success"
+                                    onclick="return confirm('¿Aprobar el pago {{ pago.referencia_externa }}? La operación quedará completada.');">
+                                    <i class="bi bi-check-lg" aria-hidden="true"></i> Aprobar
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'pago-simulado-resolver' pago.id_pago %}" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="accion" value="rechazar">
+                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('¿Rechazar el pago {{ pago.referencia_externa }}?');">
+                                    <i class="bi bi-x-lg" aria-hidden="true"></i> Rechazar
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-secondary">
+            No hay pagos con billetera esperando respuesta.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
