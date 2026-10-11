@@ -17,6 +17,7 @@ class PagoInline(admin.TabularInline):
         "monto",
         "moneda",
         "estado",
+        "confirmado_en",
         "mensaje_proveedor",
     )
     readonly_fields = fields
@@ -84,6 +85,7 @@ class PagoAdmin(admin.ModelAdmin):
         "monto",
         "moneda",
         "estado",
+        "confirmado_en",
     )
     list_filter = ("proveedor", "estado", "moneda")
     search_fields = (

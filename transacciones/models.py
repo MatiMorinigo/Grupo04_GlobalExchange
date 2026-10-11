@@ -427,6 +427,7 @@ class EstadoPago(models.TextChoices):
 
     INICIADO = "INICIADO", "Iniciado"
     EN_PROCESO = "EN_PROCESO", "En proceso"
+    CONFIRMADO = "CONFIRMADO", "Confirmado"
     RECHAZADO = "RECHAZADO", "Rechazado"
     ERROR = "ERROR", "Error"
 
@@ -437,6 +438,13 @@ ESTADOS_PAGO_ACTIVOS = (EstadoPago.INICIADO, EstadoPago.EN_PROCESO)
 Una transaccion solo puede tener un pago en alguno de estos estados.
 """
 
+ESTADOS_PAGO_FINALES = (EstadoPago.CONFIRMADO, EstadoPago.RECHAZADO)
+"""tuple[str, ...]: Estados con el resultado definitivo informado por el proveedor.
+
+Un pago en alguno de estos estados ya no cambia: una notificacion repetida
+del mismo pago no tiene efecto.
+"""
+
 
 class Pago(models.Model):
     """Registra cada intento de pago de una transaccion ante un proveedor externo.
@@ -445,8 +453,10 @@ class Pago(models.Model):
     identificador del PaymentIntent de Stripe) para poder identificarlo cuando
     llegue su confirmacion. Iniciar un pago nunca completa la transaccion: un
     pago ``EN_PROCESO`` solo indica que el proveedor acepto la solicitud.
-    Despues de un rechazo o un error se puede reintentar con un pago nuevo,
-    por lo que una transaccion conserva el historial de sus intentos.
+    Cuando el proveedor confirma el pago, queda ``CONFIRMADO`` con la fecha de
+    confirmacion. Despues de un rechazo o un error se puede reintentar con un
+    pago nuevo, por lo que una transaccion conserva el historial de sus
+    intentos.
     """
 
     id_pago = models.BigAutoField(primary_key=True)
@@ -506,6 +516,11 @@ class Pago(models.Model):
         related_name="pagos_iniciados",
         verbose_name="Iniciado por",
     )
+    confirmado_en = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Confirmado el",
+    )
     creado_en = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Creado el",
@@ -530,6 +545,13 @@ class Pago(models.Model):
             models.CheckConstraint(
                 condition=Q(monto__gt=0),
                 name="pago_monto_positivo",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(estado=EstadoPago.CONFIRMADO, confirmado_en__isnull=False)
+                    | Q(~Q(estado=EstadoPago.CONFIRMADO), confirmado_en__isnull=True)
+                ),
+                name="pago_confirmacion_coherente",
             ),
         ]
 
