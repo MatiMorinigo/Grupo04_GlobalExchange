@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from decimal import Decimal
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,40 @@ class ResultadoInicioPago:
 
     referencia_externa: str
     estado_proveedor: str
+
+
+@dataclass(frozen=True)
+class ResultadoPago:
+    """Resultado definitivo de un pago, tal como lo informa el proveedor.
+
+    Attributes:
+        referencia_externa (str): Identificador del pago en el proveedor.
+        aprobado (bool): True si el proveedor cobró el pago; False si lo
+            rechazó.
+        id_pago (int or None): Identificador del ``Pago`` que el sistema
+            envió al iniciar el cobro, si el proveedor lo devuelve.
+        monto (decimal.Decimal or None): Importe que el proveedor informa
+            haber procesado, para compararlo con el registrado.
+        moneda (str or None): Código de la moneda de ese importe.
+        detalle (str): Motivo del rechazo u otra información técnica. Nunca
+            contiene datos de la tarjeta.
+    """
+
+    referencia_externa: str
+    aprobado: bool
+    id_pago: int | None = None
+    monto: Decimal | None = None
+    moneda: str | None = None
+    detalle: str = ""
+
+
+class ConfirmacionInvalidaError(Exception):
+    """Indica que la notificación de un proveedor no pudo validarse.
+
+    Se lanza cuando la firma no es válida, el contenido no tiene el formato
+    esperado o falta la configuración necesaria para verificarla. Una
+    notificación inválida nunca modifica un pago.
+    """
 
 
 class MetodoPagoNoHabilitadoError(Exception):
