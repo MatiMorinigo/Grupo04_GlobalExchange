@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Cierre de Caja | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">
+                    <i class="bi bi-lock text-primary me-2"></i>Cierre y Arqueo de Caja
+                </h3>
+            </div>
+            <div class="col-sm-6 text-end">
+                <a href="{% url 'apertura-list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-unlock me-1"></i>Ver mis aperturas
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        {% if aperturas_activas %}
+        <div class="card card-warning card-outline shadow-sm mb-4">
+            <div class="card-header bg-warning bg-opacity-10">
+                <h4 class="card-title fw-bold text-dark mb-0">
+                    <i class="bi bi-exclamation-circle text-warning me-2"></i>Cajas abiertas pendientes de cierre
+                </h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Tiene las siguientes aperturas activas. Al finalizar su turno, debe realizar el conteo físico y arqueo para cerrar la caja.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Caja</th>
+                                <th>Sucursal</th>
+                                <th>Apertura registrada</th>
+                                <th>Turno asignado</th>
+                                <th class="text-center">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ap in aperturas_activas %}
+                            <tr>
+                                <td class="fw-bold">{{ ap.caja.nombre }} ({{ ap.caja.codigo }})</td>
+                                <td>{{ ap.caja.sucursal.nombre }}</td>
+                                <td>{{ ap.fecha_apertura|date:"d/m/Y H:i:s" }}</td>
+                                <td>{{ ap.asignacion.turno|default:"Asignación vigente" }}</td>
+                                <td class="text-center">
+                                    <a href="{% url 'cierre-create' ap.pk %}" class="btn btn-danger btn-sm px-3 fw-bold">
+                                        <i class="bi bi-lock-fill me-1"></i>Realizar arqueo y cerrar
+                                    </a>
+                                    <a href="{% url 'apertura-detail' ap.pk %}" class="btn btn-outline-secondary btn-sm ms-1">
+                                        <i class="bi bi-eye me-1"></i>Ver apertura
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card card-primary card-outline shadow-sm">
+            <div class="card-header">
+                <h4 class="card-title fw-bold mb-0">
+                    <i class="bi bi-journal-check text-primary me-2"></i>Historial de cierres de caja
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped table-hover align-middle mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 8%;" class="text-center"># Cierre</th>
+                                <th>Caja</th>
+                                <th>Fecha y hora de cierre</th>
+                                <th>Responsable</th>
+                                <th>Estado del arqueo</th>
+                                <th style="width: 12%;" class="text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for c in cierres %}
+                            <tr>
+                                <td class="text-center fw-bold">#{{ c.pk }}</td>
+                                <td>
+                                    <strong>{{ c.apertura.caja.nombre }}</strong>
+                                    <span class="text-muted d-block small">{{ c.apertura.caja.sucursal.nombre }}</span>
+                                </td>
+                                <td>{{ c.fecha_cierre|date:"d/m/Y H:i:s" }}</td>
+                                <td>
+                                    {{ c.usuario_responsable.get_full_name|default:c.usuario_responsable.username }}
+                                </td>
+                                <td>
+                                    {% if c.hay_diferencias %}
+                                    <span class="badge bg-warning text-dark fs-6">
+                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>Con diferencias
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-success fs-6">
+                                        <i class="bi bi-check-circle-fill me-1"></i>Cuadrado
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <a href="{% url 'cierre-detail' c.pk %}" class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-receipt me-1"></i>Ver detalle
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">
+                                    <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                                    No se registran cierres de caja finalizados.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Cierre y Arqueo de Caja | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">
+                    <i class="bi bi-lock text-danger me-2"></i>Cierre y Arqueo de Caja
+                </h3>
+            </div>
+            <div class="col-sm-6 text-end">
+                <a href="{% url 'apertura-detail' apertura.pk %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Volver al resumen de apertura
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-11">
+        {% if ya_cerrada %}
+        <div class="alert alert-warning shadow-sm">
+            <h5 class="fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>La caja ya se encuentra cerrada</h5>
+            <p class="mb-2">Esta apertura ya fue cerrada anteriormente o no se encuentra en estado activo.</p>
+            <a href="{% url 'apertura-detail' apertura.pk %}" class="btn btn-primary btn-sm">Ver resumen de apertura</a>
+        </div>
+        {% else %}
+
+        <div class="card card-outline card-danger shadow-sm mb-4">
+            <div class="card-header bg-danger bg-opacity-10">
+                <h4 class="card-title fw-bold text-danger mb-0">
+                    <i class="bi bi-calculator me-2"></i>Finalización de jornada: {{ apertura.caja.sucursal.nombre }} — {{ apertura.caja.nombre }}
+                </h4>
+            </div>
+
+            <div class="card-body">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <span class="text-muted d-block small">Apertura #</span>
+                        <span class="fw-bold fs-6">#{{ apertura.pk }}</span>
+                    </div>
+                    <div class="col-md-3">
+                        <span class="text-muted d-block small">Fecha y hora de inicio</span>
+                        <span class="fw-bold fs-6">{{ apertura.fecha_apertura|date:"d/m/Y H:i:s" }}</span>
+                    </div>
+                    <div class="col-md-3">
+                        <span class="text-muted d-block small">Turno / Asignación</span>
+                        <span class="fw-bold fs-6">{{ apertura.asignacion.turno|default:"Turno estándar" }}</span>
+                    </div>
+                    <div class="col-md-3">
+                        <span class="text-muted d-block small">Cajero responsable</span>
+                        <span class="fw-bold fs-6">{{ request.user.get_full_name|default:request.user.username }}</span>
+                    </div>
+                </div>
+
+                <div class="alert alert-info py-2 px-3 small mb-4">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    <strong>Instrucciones:</strong> Ingrese el conteo físico de billetes por denominación. El sistema calculará el saldo físico final y lo comparará automáticamente con el saldo teórico de la jornada para detectar posibles faltantes o sobrantes.
+                </div>
+
+                <form method="post" id="cierre-form" novalidate>
+                    {% csrf_token %}
+
+                    {% if errores %}
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Se detectaron los siguientes errores:</strong>
+                        <ul class="mb-0 mt-2">
+                            {% for err in errores %}
+                            <li>{{ err }}</li>
+                            {% endfor %}
+                        </ul>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+                    </div>
+                    {% endif %}
+
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                    {% endif %}
+
+                    <div class="card card-light border mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="fw-bold mb-0 text-dark">
+                                <i class="bi bi-graph-up text-primary me-2"></i>Comparación en tiempo real (Teórico vs. Físico)
+                            </h5>
+                        </div>
+                        <div class="card-body p-0 table-responsive">
+                            <table class="table table-bordered table-striped align-middle mb-0" id="tabla-comparacion">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Moneda</th>
+                                        <th class="text-end">Saldo Teórico (Sistema)</th>
+                                        <th class="text-end">Saldo Físico (Conteo)</th>
+                                        <th class="text-end">Diferencia</th>
+                                        <th class="text-center">Estado del Arqueo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for m in monedas_teoricas %}
+                                    <tr data-moneda-id="{{ m.id }}" data-teorico="{{ m.saldo_teorico }}">
+                                        <td class="fw-bold">{{ m.codigo }} — {{ m.nombre }}</td>
+                                        <td class="text-end fw-semibold">{{ m.codigo }} {{ m.saldo_teorico|formato_numero:2 }}</td>
+                                        <td class="text-end fw-bold text-primary fisica-display">
+                                            {{ m.codigo }} 0,00
+                                        </td>
+                                        <td class="text-end fw-bold diferencia-display">
+                                            {{ m.codigo }} 0,00
+                                        </td>
+                                        <td class="text-center estado-display">
+                                            <span class="badge bg-secondary">Sin conteo</span>
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted">No se registran movimientos con saldo en la apertura.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">
+                            <i class="bi bi-cash-stack text-success me-2"></i>Conteo físico de billetes
+                        </h5>
+                        <button type="button" id="agregar-linea-conteo" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-plus-lg me-1"></i>Agregar denominación
+                        </button>
+                    </div>
+
+                    {{ formset.management_form }}
+                    {% if formset.non_form_errors %}
+                    <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+                    {% endif %}
+
+                    <div class="table-responsive mb-4">
+                        <table class="table table-bordered table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 45%;">Denominación</th>
+                                    <th style="width: 25%;">Cantidad física contada</th>
+                                    <th style="width: 20%;" class="text-end">Subtotal</th>
+                                    <th style="width: 10%;" class="text-center">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="conteo-lineas">
+                                {% for form_c in formset %}
+                                <tr class="conteo-linea">
+                                    <td>
+                                        <label class="visually-hidden" for="{{ form_c.denominacion.id_for_label }}">Denominación</label>
+                                        {{ form_c.denominacion }}
+                                        {{ form_c.denominacion.errors }}
+                                    </td>
+                                    <td>
+                                        <label class="visually-hidden" for="{{ form_c.cantidad.id_for_label }}">Cantidad</label>
+                                        {{ form_c.cantidad }}
+                                        {{ form_c.cantidad.errors }}
+                                    </td>
+                                    <td class="text-end fw-semibold align-middle">
+                                        <span class="linea-subtotal">0,00</span>
+                                    </td>
+                                    <td class="text-center align-middle">
+                                        <label class="btn btn-outline-danger btn-sm mb-0 cursor-pointer" for="{{ form_c.DELETE.id_for_label }}">
+                                            {{ form_c.DELETE }} <i class="bi bi-trash"></i> Quitar
+                                        </label>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="{{ form.observaciones.id_for_label }}" class="form-label fw-bold">
+                            Observaciones de cierre o justificación de diferencias
+                        </label>
+                        {{ form.observaciones }}
+                        {% if form.observaciones.errors %}
+                        <div class="text-danger small mt-1">{{ form.observaciones.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="card-footer d-flex justify-content-between align-items-center bg-transparent px-0 py-3 border-top">
+                        <a href="{% url 'apertura-detail' apertura.pk %}" class="btn btn-secondary">
+                            <i class="bi bi-x-circle me-1"></i>Cancelar
+                        </a>
+                        <button type="button" id="btn-cerrar-caja" class="btn btn-danger px-4 fw-bold" data-bs-toggle="modal" data-bs-target="#modalConfirmarCierre">
+                            <i class="bi bi-lock-fill me-1"></i>Confirmar arqueo y cerrar caja
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal de confirmación de cierre de caja -->
+<div class="modal fade" id="modalConfirmarCierre" tabindex="-1" aria-labelledby="modalConfirmarCierreLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-danger">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fw-bold" id="modalConfirmarCierreLabel">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirmar Cierre y Arqueo
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body py-4 text-center">
+                <div class="mb-3">
+                    <span class="badge bg-danger bg-opacity-10 text-danger p-3 rounded-circle">
+                        <i class="bi bi-lock-fill fs-1"></i>
+                    </span>
+                </div>
+                <h5 class="fw-bold text-dark mb-2">
+                    ¿Confirma el cierre y arqueo de la caja?
+                </h5>
+                <p class="text-muted mb-3">
+                    Una vez cerrada, <strong>no se podrán realizar más operaciones ni movimientos</strong> en este turno.
+                </p>
+                <div class="alert alert-warning text-start small mb-0">
+                    <i class="bi bi-info-circle-fill me-1"></i>
+                    Se consolidará el saldo físico ingresado contra el saldo teórico del sistema y se guardará la diferencia obtenida.
+                </div>
+            </div>
+            <div class="modal-footer bg-light justify-content-between">
+                <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i>Cancelar
+                </button>
+                <button type="button" id="btn-confirmar-modal-submit" class="btn btn-danger px-4 fw-bold">
+                    <i class="bi bi-check2-circle me-1"></i>Sí, cerrar caja
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<template id="conteo-vacio">
+    <tr class="conteo-linea">
+        <td>
+            <label class="visually-hidden" for="id_conteo-__prefix__-denominacion">Denominación</label>
+            <select name="conteo-__prefix__-denominacion" class="form-select denominacion-select" id="id_conteo-__prefix__-denominacion">
+                <option value="">---------</option>
+                {% for d in denominaciones %}
+                <option value="{{ d.id }}" data-moneda-id="{{ d.moneda_id }}" data-valor="{{ d.valor }}">
+                    {{ d.moneda__codigo }} — {{ d.valor|formato_numero:2 }}
+                </option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <label class="visually-hidden" for="id_conteo-__prefix__-cantidad">Cantidad</label>
+            <input type="number" name="conteo-__prefix__-cantidad" value="0" min="0" step="1" autocomplete="off" class="form-control cantidad-input" id="id_conteo-__prefix__-cantidad">
+        </td>
+        <td class="text-end fw-semibold align-middle">
+            <span class="linea-subtotal">0,00</span>
+        </td>
+        <td class="text-center align-middle">
+            <label class="btn btn-outline-danger btn-sm mb-0 cursor-pointer" for="id_conteo-__prefix__-DELETE">
+                <input type="checkbox" name="conteo-__prefix__-DELETE" id="id_conteo-__prefix__-DELETE"> <i class="bi bi-trash"></i> Quitar
+            </label>
+        </td>
+    </tr>
+</template>
+
+{{ denominaciones|json_script:"denominaciones-data" }}
+{{ saldos_teoricos_map|json_script:"teoricos-data" }}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const denominacionesRaw = JSON.parse(document.getElementById('denominaciones-data')?.textContent || '[]');
+    const denomMap = new Map(denominacionesRaw.map(d => [String(d.id), { monedaId: d.moneda_id, codigo: d.moneda__codigo, valor: parseFloat(d.valor) }]));
+    const teoricosMap = JSON.parse(document.getElementById('teoricos-data')?.textContent || '{}');
+
+    const tablaLineas = document.getElementById('conteo-lineas');
+    const totalInput = document.getElementById('id_conteo-TOTAL_FORMS');
+    const btnAgregar = document.getElementById('agregar-linea-conteo');
+    const maximo = Number(document.getElementById('id_conteo-MAX_NUM_FORMS')?.value || 100);
+
+    function recalcularFila(fila) {
+        const select = fila.querySelector('.denominacion-select');
+        const cantInput = fila.querySelector('.cantidad-input');
+        const subtotalSpan = fila.querySelector('.linea-subtotal');
+        if (!select || !cantInput || !subtotalSpan) return { monedaId: null, subtotal: 0 };
+
+        const dId = select.value;
+        const cant = parseInt(cantInput.value, 10) || 0;
+        const dInfo = denomMap.get(dId);
+
+        let subtotal = 0;
+        let monedaId = null;
+        if (dInfo && cant >= 0) {
+            subtotal = dInfo.valor * cant;
+            monedaId = dInfo.monedaId;
+        }
+        subtotalSpan.textContent = subtotal.toLocaleString('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return { monedaId, subtotal };
+    }
+
+    function actualizarComparacion() {
+        const fisicos = {};
+        const filas = tablaLineas.querySelectorAll('.conteo-linea');
+        filas.forEach(f => {
+            const checkDelete = f.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (checkDelete && checkDelete.checked) {
+                f.style.opacity = '0.4';
+                return;
+            }
+            f.style.opacity = '1';
+            const { monedaId, subtotal } = recalcularFila(f);
+            if (monedaId) {
+                fisicos[monedaId] = (fisicos[monedaId] || 0) + subtotal;
+            }
+        });
+
+        // Actualizar filas de la tabla de comparación
+        document.querySelectorAll('#tabla-comparacion tbody tr[data-moneda-id]').forEach(tr => {
+            const mId = Number(tr.dataset.monedaId);
+            const teorico = parseFloat(tr.dataset.teorico) || 0;
+            const fisico = fisicos[mId] || 0;
+            const dif = fisico - teorico;
+
+            const fDisp = tr.querySelector('.fisica-display');
+            const dDisp = tr.querySelector('.diferencia-display');
+            const eDisp = tr.querySelector('.estado-display');
+
+            if (fDisp) {
+                fDisp.textContent = fisico.toLocaleString('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+            if (dDisp) {
+                dDisp.textContent = dif.toLocaleString('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                if (Math.abs(dif) < 0.001) {
+                    dDisp.className = 'text-end fw-bold diferencia-display text-success';
+                } else if (dif > 0) {
+                    dDisp.className = 'text-end fw-bold diferencia-display text-primary';
+                } else {
+                    dDisp.className = 'text-end fw-bold diferencia-display text-danger';
+                }
+            }
+            if (eDisp) {
+                if (Math.abs(dif) < 0.001) {
+                    eDisp.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Cuadrado</span>';
+                } else if (dif > 0) {
+                    eDisp.innerHTML = '<span class="badge bg-primary"><i class="bi bi-arrow-up-circle me-1"></i>Sobrante</span>';
+                } else {
+                    eDisp.innerHTML = '<span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Faltante</span>';
+                }
+            }
+        });
+    }
+
+    function configurarFila(fila) {
+        const select = fila.querySelector('.denominacion-select');
+        const cantInput = fila.querySelector('.cantidad-input');
+        const checkDelete = fila.querySelector('input[type="checkbox"][name$="-DELETE"]');
+
+        if (select) {
+            select.addEventListener('change', actualizarComparacion);
+        }
+        if (cantInput) {
+            cantInput.addEventListener('input', actualizarComparacion);
+            cantInput.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+            cantInput.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
+            });
+        }
+        if (checkDelete) {
+            checkDelete.addEventListener('change', actualizarComparacion);
+        }
+    }
+
+    if (tablaLineas) {
+        tablaLineas.querySelectorAll('.conteo-linea').forEach(configurarFila);
+    }
+
+    if (btnAgregar && totalInput) {
+        btnAgregar.addEventListener('click', () => {
+            const indice = Number(totalInput.value);
+            if (indice >= maximo) return;
+
+            const templateHtml = document.getElementById('conteo-vacio').innerHTML.replaceAll('__prefix__', String(indice));
+            tablaLineas.insertAdjacentHTML('beforeend', templateHtml);
+            const nuevaFila = tablaLineas.lastElementChild;
+            configurarFila(nuevaFila);
+
+            totalInput.value = indice + 1;
+            btnAgregar.disabled = Number(totalInput.value) >= maximo;
+            actualizarComparacion();
+        });
+    }
+
+    // Envío del formulario confirmado desde el modal
+    const formEl = document.getElementById('cierre-form');
+    const btnConfirmarModal = document.getElementById('btn-confirmar-modal-submit');
+
+    if (btnConfirmarModal && formEl) {
+        btnConfirmarModal.addEventListener('click', () => {
+            btnConfirmarModal.disabled = true;
+            btnConfirmarModal.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Cerrando caja...';
+            formEl.submit();
+        });
+    }
+
+    if (formEl) {
+        formEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+            }
+        });
+    }
+
+    actualizarComparacion();
+})();
+</script>
+{% endblock %}
