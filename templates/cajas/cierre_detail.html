@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Comprobante de Cierre de Caja #{{ cierre.pk }} | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">
+                    <i class="bi bi-file-earmark-check text-success me-2"></i>Cierre y Arqueo #{{ cierre.pk }}
+                </h3>
+            </div>
+            <div class="col-sm-6 text-end">
+                <a href="{% url 'cierre-list' %}" class="btn btn-outline-secondary me-2">
+                    <i class="bi bi-arrow-left me-1"></i>Volver al historial
+                </a>
+                <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+                    <i class="bi bi-printer me-1"></i>Imprimir comprobante
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-11">
+        <div class="card card-success card-outline shadow-sm mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="card-title fw-bold mb-0">
+                    <i class="bi bi-check2-circle text-success me-2"></i>Comprobante oficial de finalización de jornada
+                </h4>
+                <div>
+                    {% if cierre.hay_diferencias %}
+                    <span class="badge bg-warning text-dark fs-6">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>Con diferencias
+                    </span>
+                    {% else %}
+                    <span class="badge bg-success fs-6">
+                        <i class="bi bi-check-circle-fill me-1"></i>Arqueo cuadrado
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card-body">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Fecha y hora de cierre</span>
+                        <span class="fw-bold fs-6">{{ cierre.fecha_cierre|date:"d/m/Y H:i:s" }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Cajero responsable</span>
+                        <span class="fw-bold fs-6">{{ cierre.usuario_responsable.get_full_name|default:cierre.usuario_responsable.username }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Caja operativa</span>
+                        <span class="fw-bold fs-6">{{ cierre.apertura.caja.nombre }} ({{ cierre.apertura.caja.codigo }})</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Sucursal</span>
+                        <span class="fw-bold fs-6">{{ cierre.apertura.caja.sucursal.nombre }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Apertura vinculada</span>
+                        <span class="fw-bold">
+                            <a href="{% url 'apertura-detail' cierre.apertura_id %}">Apertura #{{ cierre.apertura_id }}</a>
+                        </span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Inicio de jornada</span>
+                        <span class="fw-bold">{{ cierre.apertura.fecha_apertura|date:"d/m/Y H:i:s" }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Turno / Asignación</span>
+                        <span class="fw-bold">{{ cierre.apertura.asignacion.turno|default:"Turno estándar" }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Estado de la caja</span>
+                        <span class="badge bg-danger fs-6">Cerrada</span>
+                    </div>
+                    {% if cierre.observaciones %}
+                    <div class="col-12">
+                        <span class="text-muted d-block small">Observaciones</span>
+                        <p class="mb-0 bg-light p-2 rounded border">{{ cierre.observaciones }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <hr class="my-4">
+
+                <h5 class="fw-bold mb-3">
+                    <i class="bi bi-table text-primary me-2"></i>Comparativa de saldos por moneda (Arqueo)
+                </h5>
+
+                <div class="table-responsive mb-4">
+                    <table class="table table-bordered table-striped align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Moneda</th>
+                                <th class="text-end">Saldo Teórico</th>
+                                <th class="text-end">Saldo Físico</th>
+                                <th class="text-end">Diferencia</th>
+                                <th class="text-center">Resultado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for det in cierre.detalles.all %}
+                            <tr>
+                                <td class="fw-bold">{{ det.moneda.codigo }} — {{ det.moneda.nombre }}</td>
+                                <td class="text-end">{{ det.moneda.codigo }} {{ det.saldo_teorico|formato_numero:2 }}</td>
+                                <td class="text-end fw-bold">{{ det.moneda.codigo }} {{ det.saldo_fisico|formato_numero:2 }}</td>
+                                <td class="text-end fw-bold {% if det.diferencia > 0 %}text-primary{% elif det.diferencia < 0 %}text-danger{% else %}text-success{% endif %}">
+                                    {{ det.moneda.codigo }} {{ det.diferencia|formato_numero:2 }}
+                                </td>
+                                <td class="text-center">
+                                    {% if det.estado_arqueo == "CUADRADO" %}
+                                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Cuadrado</span>
+                                    {% elif det.estado_arqueo == "SOBRANTE" %}
+                                    <span class="badge bg-primary"><i class="bi bi-arrow-up-circle me-1"></i>Sobrante</span>
+                                    {% else %}
+                                    <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Faltante</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">Sin monedas registradas en este arqueo.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <h5 class="fw-bold mb-3">
+                    <i class="bi bi-cash-stack text-success me-2"></i>Desglose físico final de billetes contados
+                </h5>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 5%;" class="text-center">#</th>
+                                <th>Moneda</th>
+                                <th class="text-end">Denominación / Valor facial</th>
+                                <th class="text-center">Cantidad de billetes</th>
+                                <th class="text-end">Subtotal físico</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for c in cierre.conteos_billetes.all %}
+                            <tr>
+                                <td class="text-center">{{ forloop.counter }}</td>
+                                <td>{{ c.denominacion.moneda.codigo }}</td>
+                                <td class="text-end">{{ c.valor_denominacion|formato_numero:2 }}</td>
+                                <td class="text-center fw-bold">{{ c.cantidad }}</td>
+                                <td class="text-end fw-semibold">{{ c.denominacion.moneda.codigo }} {{ c.subtotal|formato_numero:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">No se cargaron líneas de conteo físico.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <a href="{% url 'cierre-list' %}" class="btn btn-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Volver al historial
+                </a>
+                <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+                    <i class="bi bi-printer me-1"></i>Imprimir comprobante
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

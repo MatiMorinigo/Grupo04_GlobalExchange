@@ -1,4 +1,5 @@
 
+from decimal import Decimal
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
@@ -6,6 +7,7 @@ from django.views import View
 from django.views.generic import ListView, CreateView, UpdateView
 
 from core.mixins import AdminRequiredMixin
+from core.keycloak import tiene_rol
 from .models import Sucursal
 from .forms import SucursalForm
 
@@ -25,10 +27,15 @@ from .mixins import CajeroRequiredMixin
 from .forms import (
     InventarioInicialFormSet, DenominacionBilleteForm,
     RemesaForm, DetalleRemesaFormSet,
+    ConteoBilleteFormSet, CierreCajaForm,
 )
-from .models import AperturaCaja, DenominacionBillete, Remesa, DetalleRemesa
+from .models import (
+    AperturaCaja, DenominacionBillete, Remesa, DetalleRemesa,
+    CierreCaja, DetalleCierreCaja, ConteoBilleteCierre,
+)
 from .services import (
     abrir_caja, asignaciones_vigentes, registrar_remesa, RemesaError,
+    cerrar_caja, CierreCajaError, obtener_cajero_autenticado,
 )
 from cotizaciones.models import Moneda
 
@@ -579,5 +586,172 @@ class RemesaDetailView(LoginRequiredMixin, AdminOTesoreroRequiredMixin, RemesaCo
         return Remesa.objects.select_related(
             "caja__sucursal", "moneda", "usuario_responsable", "apertura"
         ).prefetch_related("detalles__denominacion")
+
+
+# ---------------------------------------------------------------------------
+# Vistas de Cierre y Arqueo de Caja (HU-37)
+# ---------------------------------------------------------------------------
+
+class CierreContextMixin:
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cajas"
+        context["active_submenu"] = "cierres"
+        return context
+
+
+class CierreCajaListView(LoginRequiredMixin, CierreContextMixin, TemplateView):
+    """Módulo de cierre de caja para el cajero (HU-37).
+
+    Muestra:
+    - Aperturas activas vigentes asignadas al cajero listas para ser cerradas.
+    - Historial de cierres de caja registrados por el cajero (o todos si es admin).
+    """
+
+    template_name = "cajas/cierre_list.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        es_admin = (
+            tiene_rol(self.request, "administrador")
+            or self.request.user.is_superuser
+        )
+
+        try:
+            cajero_id = obtener_cajero_autenticado(self.request)
+        except PermissionDenied:
+            cajero_id = None
+
+        if cajero_id:
+            context["aperturas_activas"] = AperturaCaja.objects.filter(
+                cajero_keycloak_id=cajero_id,
+                estado=AperturaCaja.Estado.ABIERTA,
+            ).select_related("caja__sucursal", "asignacion")
+
+            context["cierres"] = CierreCaja.objects.filter(
+                apertura__cajero_keycloak_id=cajero_id
+            ).select_related(
+                "apertura__caja__sucursal", "usuario_responsable"
+            ).prefetch_related("detalles__moneda")[:50]
+        elif es_admin:
+            context["aperturas_activas"] = AperturaCaja.objects.filter(
+                estado=AperturaCaja.Estado.ABIERTA,
+            ).select_related("caja__sucursal", "asignacion")
+
+            context["cierres"] = CierreCaja.objects.all().select_related(
+                "apertura__caja__sucursal", "usuario_responsable"
+            ).prefetch_related("detalles__moneda")[:50]
+        else:
+            context["aperturas_activas"] = []
+            context["cierres"] = []
+
+        return context
+
+
+class CierreCajaCreateView(CajeroRequiredMixin, CierreContextMixin, TemplateView):
+    """Registro del arqueo y cierre físico final de caja (HU-37)."""
+
+    template_name = "cajas/cierre_form.html"
+
+    def get_apertura(self):
+        return get_object_or_404(
+            AperturaCaja.objects.select_related("caja__sucursal", "asignacion"),
+            pk=self.kwargs["id_apertura"],
+            cajero_keycloak_id=self.cajero_id,
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        apertura = self.get_apertura()
+        context["apertura"] = apertura
+
+        if apertura.estado != AperturaCaja.Estado.ABIERTA or hasattr(apertura, "cierre"):
+            context["ya_cerrada"] = True
+            return context
+
+        context.setdefault("form", CierreCajaForm())
+        context.setdefault("formset", ConteoBilleteFormSet(prefix="conteo"))
+
+        saldos_teoricos_dict = apertura.saldos_actuales
+        monedas_con_saldo = Moneda.objects.filter(pk__in=saldos_teoricos_dict.keys(), activa=True)
+        monedas_info = []
+        for m in monedas_con_saldo:
+            monedas_info.append({
+                "id": m.pk,
+                "codigo": m.codigo,
+                "nombre": m.nombre,
+                "saldo_teorico": float(saldos_teoricos_dict.get(m.pk, Decimal("0.00"))),
+            })
+        context["monedas_teoricas"] = monedas_info
+        context["saldos_teoricos_map"] = {m["id"]: m["saldo_teorico"] for m in monedas_info}
+
+        denominaciones = list(
+            DenominacionBillete.objects.filter(activa=True, moneda__activa=True)
+            .values("id", "moneda_id", "moneda__codigo", "valor")
+            .order_by("moneda_id", "valor")
+        )
+        for d in denominaciones:
+            d["valor"] = float(d["valor"])
+        context["denominaciones"] = denominaciones
+        return context
+
+    def post(self, request, *args, **kwargs):
+        apertura = self.get_apertura()
+        if apertura.estado != AperturaCaja.Estado.ABIERTA or hasattr(apertura, "cierre"):
+            messages.error(request, "Esta caja ya no se encuentra abierta.")
+            return redirect("apertura-detail", id_apertura=apertura.pk)
+
+        form = CierreCajaForm(request.POST)
+        formset = ConteoBilleteFormSet(request.POST, prefix="conteo")
+        errores = []
+
+        if form.is_valid() and formset.is_valid():
+            try:
+                cierre = cerrar_caja(
+                    request=request,
+                    apertura_id=apertura.pk,
+                    conteo_billetes=formset.conteo(),
+                    observaciones=form.cleaned_data.get("observaciones", ""),
+                )
+            except (CierreCajaError, ValidationError) as error:
+                errores = error.messages if hasattr(error, "messages") else [str(error)]
+            else:
+                messages.success(
+                    request,
+                    f"Cierre de caja #{cierre.pk} registrado con éxito. La caja ha sido cerrada para este turno.",
+                )
+                return redirect("cierre-detail", id_cierre=cierre.pk)
+        else:
+            for f in formset:
+                for err_list in f.errors.values():
+                    errores.extend(err_list)
+            for err in formset.non_form_errors():
+                errores.append(err)
+            for err_list in form.errors.values():
+                errores.extend(err_list)
+
+        return self.render_to_response(
+            self.get_context_data(form=form, formset=formset, errores=errores)
+        )
+
+
+class CierreCajaDetailView(LoginRequiredMixin, CierreContextMixin, DetailView):
+    """Consulta detallada de un cierre y arqueo de caja (HU-37)."""
+
+    model = CierreCaja
+    template_name = "cajas/cierre_detail.html"
+    context_object_name = "cierre"
+    pk_url_kwarg = "id_cierre"
+
+    def get_queryset(self):
+        return CierreCaja.objects.select_related(
+            "apertura__caja__sucursal",
+            "apertura__asignacion",
+            "usuario_responsable",
+        ).prefetch_related(
+            "detalles__moneda",
+            "conteos_billetes__denominacion__moneda",
+        )
+
 
 

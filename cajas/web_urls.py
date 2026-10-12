@@ -22,9 +22,16 @@ from .views import (
     RemesaListView,
     RemesaCreateView,
     RemesaDetailView,
+    CierreCajaListView,
+    CierreCajaCreateView,
+    CierreCajaDetailView,
 )
 
 urlpatterns = [
+    # Cierre y arqueo de caja (HU-37)
+    path("cierres/", CierreCajaListView.as_view(), name="cierre-list"),
+    path("aperturas/<int:id_apertura>/cerrar/", CierreCajaCreateView.as_view(), name="cierre-create"),
+    path("cierres/<int:id_cierre>/", CierreCajaDetailView.as_view(), name="cierre-detail"),
     # Remesas de efectivo (HU-36)
     path("remesas/", RemesaListView.as_view(), name="remesa-list"),
     path("remesas/nueva/", RemesaCreateView.as_view(), name="remesa-create"),

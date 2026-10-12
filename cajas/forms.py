@@ -1,6 +1,6 @@
 from django import forms
 from cotizaciones.models import Moneda
-from .models import DenominacionBillete, AperturaCaja, Remesa, DetalleRemesa
+from .models import DenominacionBillete, AperturaCaja, Remesa, DetalleRemesa, CierreCaja
 from .services import MAX_LINEAS_INVENTARIO
 from .models import Sucursal, Caja
 from .models import AsignacionCaja, Caja
@@ -327,4 +327,97 @@ DetalleRemesaFormSet = forms.formset_factory(
     validate_max=True,
     absolute_max=MAX_LINEAS_INVENTARIO,
 )
+
+
+class ConteoBilleteForm(forms.Form):
+    """Línea de conteo físico de una denominación durante el arqueo de cierre (HU-37)."""
+
+    denominacion = forms.ModelChoiceField(
+        queryset=DenominacionBillete.objects.filter(activa=True, moneda__activa=True),
+        label="Denominación",
+        widget=forms.Select(attrs={"class": "form-select denominacion-select"}),
+    )
+    cantidad = forms.IntegerField(
+        min_value=0,
+        max_value=2147483647,
+        initial=0,
+        label="Cantidad de billetes",
+        widget=forms.NumberInput(
+            attrs={"class": "form-control cantidad-input", "min": 0, "step": 1, "autocomplete": "off"}
+        ),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cantidad = cleaned_data.get("cantidad")
+        if cantidad is not None and cantidad < 0:
+            self.add_error("cantidad", "La cantidad no puede ser negativa.")
+        return cleaned_data
+
+
+class BaseConteoBilleteFormSet(forms.BaseFormSet):
+    """Formset con validación de no repetición de denominaciones y extracción limpia."""
+
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+
+        denominaciones = set()
+        total_lineas = 0
+        for form in self.forms:
+            if not form.cleaned_data or form.cleaned_data.get("DELETE"):
+                continue
+            denom = form.cleaned_data.get("denominacion")
+            if not denom:
+                continue
+            if denom.pk in denominaciones:
+                raise forms.ValidationError("No repita denominaciones dentro del conteo físico.")
+            denominaciones.add(denom.pk)
+            total_lineas += 1
+
+        if total_lineas == 0:
+            raise forms.ValidationError("Debe ingresar al menos una denominación en el conteo físico.")
+
+    def conteo(self):
+        """Devuelve el conteo estructurado para pasar a cerrar_caja."""
+        return [
+            {
+                "denominacion_id": form.cleaned_data["denominacion"].pk,
+                "cantidad": form.cleaned_data["cantidad"],
+            }
+            for form in self.forms
+            if form.cleaned_data and not form.cleaned_data.get("DELETE") and form.cleaned_data.get("denominacion")
+        ]
+
+
+ConteoBilleteFormSet = forms.formset_factory(
+    ConteoBilleteForm,
+    formset=BaseConteoBilleteFormSet,
+    extra=0,
+    min_num=1,
+    validate_min=True,
+    can_delete=True,
+    max_num=MAX_LINEAS_INVENTARIO,
+    validate_max=True,
+    absolute_max=MAX_LINEAS_INVENTARIO,
+)
+
+
+class CierreCajaForm(forms.ModelForm):
+    """Formulario para observaciones del cierre de caja (HU-37)."""
+
+    class Meta:
+        model = CierreCaja
+        fields = ["observaciones"]
+        widgets = {
+            "observaciones": forms.Textarea(
+                attrs={
+                    "class": "form-control",
+                    "rows": 3,
+                    "placeholder": "Observaciones o justificación de faltantes/sobrantes (opcional)",
+                }
+            ),
+        }
+
 

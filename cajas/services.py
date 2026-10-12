@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from uuid import UUID
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, DatabaseError, transaction
 from django.utils import timezone
 
 from decimal import Decimal
@@ -13,6 +13,7 @@ from cotizaciones.models import Moneda
 from .models import (
     AperturaCaja, AsignacionCaja, Caja, DenominacionBillete,
     DetalleInventarioInicial, Sucursal, Remesa, DetalleRemesa,
+    CierreCaja, DetalleCierreCaja, ConteoBilleteCierre,
 )
 
 MAX_LINEAS_INVENTARIO = 100
@@ -20,6 +21,10 @@ MAX_LINEAS_INVENTARIO = 100
 
 class AperturaCajaError(ValidationError):
     """Conflicto de negocio que las vistas pueden mostrar sin producir un 500."""
+
+
+class CierreCajaError(ValidationError):
+    """Error al procesar el cierre y arqueo de caja (HU-37)."""
 
 
 def obtener_cajero_autenticado(request):
@@ -310,4 +315,163 @@ def registrar_remesa(
             return remesa
     except AperturaCajaError as error:
         raise RemesaError(str(error)) from error
+
+
+def cerrar_caja(
+    request=None,
+    apertura_id=None,
+    conteo_billetes=None,
+    observaciones="",
+    usuario=None,
+):
+    """Registra el cierre y arqueo de caja (HU-37).
+
+    Criterios de aceptación:
+    - Permite cerrar únicamente una caja que tenga una apertura activa.
+    - El cajero debe ingresar el conteo físico final por moneda y denominación.
+    - Calcula el saldo físico final a partir del conteo ingresado.
+    - Calcula el saldo teórico utilizando la apertura y los movimientos (remesas).
+    - Compara el saldo teórico con el saldo físico identificando faltantes o sobrantes.
+    - Conserva el saldo teórico, el saldo físico y la diferencia obtenida.
+    - Una caja cerrada no debe aceptar nuevos movimientos correspondientes a ese turno.
+    - Registra fecha, hora y usuario responsable.
+    """
+    if request is not None:
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied("Debe iniciar sesión para operar.")
+        usuario = request.user
+        cajero_id = obtener_cajero_autenticado(request)
+    elif usuario is None:
+        raise CierreCajaError("Se requiere un usuario responsable.")
+    else:
+        cajero_id = None
+
+    if not apertura_id:
+        raise CierreCajaError("Debe especificar la apertura de caja a cerrar.")
+
+    if not conteo_billetes or not isinstance(conteo_billetes, (list, tuple)):
+        raise CierreCajaError("Debe ingresar el conteo físico de billetes.")
+
+    if len(conteo_billetes) > MAX_LINEAS_INVENTARIO:
+        raise CierreCajaError(f"El conteo no puede superar {MAX_LINEAS_INVENTARIO} líneas.")
+
+    # Validar formato de líneas de conteo
+    conteo_limpio = []
+    denominaciones_ids = []
+    for item in conteo_billetes:
+        if not isinstance(item, dict) or "denominacion_id" not in item or "cantidad" not in item:
+            raise CierreCajaError("Línea de conteo inválida.")
+        try:
+            d_id = int(item["denominacion_id"])
+            cant = int(item["cantidad"])
+        except (ValueError, TypeError):
+            raise CierreCajaError("Denominación o cantidad inválida en el conteo.")
+        if cant < 0:
+            raise CierreCajaError("La cantidad de billetes no puede ser negativa.")
+        denominaciones_ids.append(d_id)
+        conteo_limpio.append((d_id, cant))
+
+    if len(set(denominaciones_ids)) != len(denominaciones_ids):
+        raise CierreCajaError("No repita denominaciones dentro del conteo físico.")
+
+    try:
+        with transaction.atomic():
+            # Bloquear la apertura y verificar estado
+            try:
+                apertura = AperturaCaja.objects.select_for_update().select_related("caja__sucursal").get(pk=apertura_id)
+            except AperturaCaja.DoesNotExist as err:
+                raise CierreCajaError("La apertura de caja no existe.") from err
+
+            # Criterio 1: El sistema debe permitir cerrar únicamente una caja que tenga una apertura activa.
+            if apertura.estado != AperturaCaja.Estado.ABIERTA:
+                raise CierreCajaError("Solo se puede cerrar una caja con apertura activa. Esta caja ya se encuentra cerrada.")
+
+            if hasattr(apertura, "cierre"):
+                raise CierreCajaError("Esta apertura ya cuenta con un cierre registrado.")
+
+            # Si vino cajero_id por request, verificar que la apertura pertenezca a ese cajero
+            if cajero_id and apertura.cajero_keycloak_id != cajero_id:
+                raise PermissionDenied("No tiene permisos para cerrar la apertura de otro cajero.")
+
+            # Bloquear catálogo de denominaciones
+            denominaciones_map = {
+                d.pk: d
+                for d in DenominacionBillete.objects.select_for_update()
+                .select_related("moneda")
+                .filter(pk__in=denominaciones_ids, activa=True, moneda__activa=True)
+            }
+            if len(denominaciones_map) != len(denominaciones_ids):
+                raise CierreCajaError("El conteo contiene denominaciones no válidas o inactivas.")
+
+            # Criterio 3: El sistema debe calcular el saldo físico final a partir del conteo ingresado.
+            saldos_fisicos = {}
+            conteos_a_crear = []
+            for d_id, cant in conteo_limpio:
+                denom = denominaciones_map[d_id]
+                m_id = denom.moneda_id
+                subtotal = denom.valor * cant
+                saldos_fisicos[m_id] = saldos_fisicos.get(m_id, Decimal("0.00")) + subtotal
+                conteos_a_crear.append({
+                    "denominacion": denom,
+                    "valor_denominacion": denom.valor,
+                    "cantidad": cant,
+                })
+
+            # Criterio 4: El sistema debe calcular el saldo teórico utilizando la apertura y los movimientos realizados durante la jornada.
+            saldos_teoricos = apertura.saldos_actuales
+
+            # Unir todas las monedas involucradas
+            todas_monedas_ids = set(saldos_teoricos.keys()).union(set(saldos_fisicos.keys()))
+
+            ahora = timezone.now()
+
+            # Criterio 9: El cierre debe registrar fecha, hora y usuario responsable.
+            cierre = CierreCaja.objects.create(
+                apertura=apertura,
+                fecha_cierre=ahora,
+                usuario_responsable=usuario,
+                observaciones=observaciones or "",
+            )
+
+            # Criterios 5, 6, 7:
+            # - Comparar saldo teórico con saldo físico.
+            # - Identificar y registrar faltante o sobrante (diferencia = físico - teórico).
+            # - El cierre debe conservar saldo teórico, saldo físico y diferencia obtenida.
+            detalles_cierre = []
+            for m_id in sorted(todas_monedas_ids):
+                teorico = saldos_teoricos.get(m_id, Decimal("0.00"))
+                fisico = saldos_fisicos.get(m_id, Decimal("0.00"))
+                dif = fisico - teorico
+                detalles_cierre.append(
+                    DetalleCierreCaja(
+                        cierre=cierre,
+                        moneda_id=m_id,
+                        saldo_teorico=teorico,
+                        saldo_fisico=fisico,
+                        diferencia=dif,
+                    )
+                )
+            DetalleCierreCaja.objects.bulk_create(detalles_cierre)
+
+            # Guardar conteo físico de billetes
+            conteos_objs = [
+                ConteoBilleteCierre(
+                    cierre=cierre,
+                    denominacion=item["denominacion"],
+                    valor_denominacion=item["valor_denominacion"],
+                    cantidad=item["cantidad"],
+                )
+                for item in conteos_a_crear
+            ]
+            ConteoBilleteCierre.objects.bulk_create(conteos_objs)
+
+            # Criterio 8: Una caja cerrada no debe aceptar nuevos movimientos correspondientes a ese turno.
+            apertura.estado = AperturaCaja.Estado.CERRADA
+            apertura.fecha_cierre = ahora
+            apertura.save(update_fields=["estado", "fecha_cierre"])
+
+            return cierre
+    except (IntegrityError, DatabaseError) as error:
+        raise CierreCajaError("Error al registrar el cierre de caja.") from error
+
 

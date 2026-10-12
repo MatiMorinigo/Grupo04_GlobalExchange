@@ -75,6 +75,30 @@ def home(request):
             "disabled_reason": "",
         },
         {
+            "title": "Gestión de Caja",
+            "description": "Apertura y cierre operativo de caja.",
+            "icon": "bi bi-cash-stack",
+            "bg_class": "text-bg-primary",
+            "link_class": "link-light",
+            "status": "Disponible",
+            "status_class": "text-bg-success",
+            "enabled": True,
+            "actions": [
+                {
+                    "label": "Apertura de caja",
+                    "href": reverse("apertura-list"),
+                },
+                {
+                    "label": "Cierre de caja",
+                    "href": reverse("cierre-list"),
+                },
+            ],
+            "href": reverse("apertura-list"),
+            "action_label": "Gestión de Caja",
+            "disabled_reason": "",
+            "cajero_only": True,
+        },
+        {
             "title": "Reportes",
             "description": "Resúmenes operativos y financieros.",
             "icon": "bi bi-file-earmark-bar-graph-fill",
@@ -107,6 +131,12 @@ def home(request):
             module
             for module in modules
             if not module.get("admin_only", False)
+        ]
+    if not tiene_rol(request, "cajero"):
+        modules = [
+            module
+            for module in modules
+            if not module.get("cajero_only", False)
         ]
     # Contexto de clientes asociados al usuario
     clientes_aprobados = []
