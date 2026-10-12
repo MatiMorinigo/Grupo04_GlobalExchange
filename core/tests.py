@@ -173,6 +173,31 @@ class HomeViewTests(SimpleTestCase):
                 for route in ("sucursal-list", "caja-list", "asignacion-list", "denominacion-list"):
                     self.assertNotIn(reverse(route), content)
 
+    @patch("core.keycloak.obtener_roles", return_value=["cajero"])
+    @patch("core.context_processors.obtener_roles", return_value=["cajero"])
+    def test_cajero_sees_gestion_de_caja_module_and_no_solicitar_asociacion(self, context_roles, keycloak_roles):
+        user = User(username="cajero1")
+        response = self.render_home(user)
+        content = response.content.decode("utf-8")
+
+        self.assertIn("Gestión de Caja", content)
+        self.assertIn("Apertura de caja", content)
+        self.assertIn("Cierre de caja", content)
+        self.assertNotIn("Sin cliente asociado", content)
+        self.assertNotIn("Solicitar asociación", content)
+
+    @patch("core.keycloak.obtener_roles", return_value=["tesorero"])
+    @patch("core.context_processors.obtener_roles", return_value=["tesorero"])
+    def test_tesorero_does_not_see_solicitar_asociacion_and_no_gestion_de_caja_module(self, context_roles, keycloak_roles):
+        user = User(username="tesorero1")
+        response = self.render_home(user)
+        content = response.content.decode("utf-8")
+
+        self.assertNotIn("Sin cliente asociado", content)
+        self.assertNotIn("Solicitar asociación", content)
+        cards_section = content.split('<div class="row g-3">', 1)[1].split("</main>", 1)[0]
+        self.assertNotIn("Gestión de Caja", cards_section)
+
     def test_error_messages_use_bootstrap_danger_class(self):
         request = self.factory.get("/")
         request.user = AnonymousUser()

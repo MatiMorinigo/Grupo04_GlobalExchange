@@ -466,6 +466,13 @@
                                     <p>Apertura de caja</p>
                                 </a>
                             </li>
+                            <li class="nav-item">
+                                <a href="{% url 'cierre-list' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'cierres' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-lock"></i>
+                                    <p>Cierre de caja</p>
+                                </a>
+                            </li>
                             {% endif %}
 
                         </ul>
@@ -523,13 +530,13 @@
                     </li>
                     {% endif %}
 
-                    {% if request.user.is_authenticated %}
+                    {% if request.user.is_authenticated and not es_cajero and not es_tesorero or es_administrador %}
 
                     <li class="nav-header">
                         ASOCIACIONES
                     </li>
 
-
+                    {% if not es_cajero and not es_tesorero %}
                     <li class="nav-item">
 
                         <a href="{% url 'solicitar-asociacion' %}"
@@ -556,6 +563,7 @@
                         </a>
 
                     </li>
+                    {% endif %}
 
 
                     {% if es_administrador %}

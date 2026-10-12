@@ -119,11 +119,9 @@
 
 {% if request.user.is_authenticated %}
 
-{# ── Sección cliente activo para cualquier usuario autenticado ── #}
+{% if clientes_aprobados %}
+{# ── Sección cliente activo ── #}
 <div class="mb-4">
-
-    {% if clientes_aprobados %}
-
     <div class="card border-0 shadow-sm"
          style="border-left: 4px solid var(--bs-success) !important;">
 
@@ -226,10 +224,11 @@
             </div>
         </div>
     </div>
+</div>
 
+{% elif not es_cajero and not es_tesorero %}
 
-    {% else %}
-
+<div class="mb-4">
     <div class="card border-0 bg-body-secondary">
 
         <div class="card-body py-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
@@ -263,10 +262,9 @@
 
         </div>
     </div>
-
-    {% endif %}
-
 </div>
+
+{% endif %}
 
 {% endif %}
 
