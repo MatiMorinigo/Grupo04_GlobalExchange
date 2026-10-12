@@ -19,9 +19,16 @@ from .views import (
     DenominacionBilleteCreateView,
     DenominacionBilleteUpdateView,
     DenominacionBilleteEstadoView,
+    RemesaListView,
+    RemesaCreateView,
+    RemesaDetailView,
 )
 
 urlpatterns = [
+    # Remesas de efectivo (HU-36)
+    path("remesas/", RemesaListView.as_view(), name="remesa-list"),
+    path("remesas/nueva/", RemesaCreateView.as_view(), name="remesa-create"),
+    path("remesas/<int:id_remesa>/", RemesaDetailView.as_view(), name="remesa-detail"),
     path("denominaciones/", DenominacionBilleteListView.as_view(), name="denominacion-list"),
     path("denominaciones/nueva/", DenominacionBilleteCreateView.as_view(), name="denominacion-create"),
     path("denominaciones/<int:id_denominacion>/editar/", DenominacionBilleteUpdateView.as_view(), name="denominacion-update"),

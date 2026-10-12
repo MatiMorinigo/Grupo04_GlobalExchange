@@ -20,10 +20,17 @@ from django.db import IntegrityError, transaction
 from django.db.models import OuterRef, Subquery
 from django.core.exceptions import ValidationError
 from django.views.generic import TemplateView, DetailView
+from django.contrib.auth.mixins import LoginRequiredMixin
 from .mixins import CajeroRequiredMixin
-from .forms import InventarioInicialFormSet, DenominacionBilleteForm
-from .models import AperturaCaja, DenominacionBillete
-from .services import abrir_caja, asignaciones_vigentes
+from .forms import (
+    InventarioInicialFormSet, DenominacionBilleteForm,
+    RemesaForm, DetalleRemesaFormSet,
+)
+from .models import AperturaCaja, DenominacionBillete, Remesa, DetalleRemesa
+from .services import (
+    abrir_caja, asignaciones_vigentes, registrar_remesa, RemesaError,
+)
+from cotizaciones.models import Moneda
 
 
 class SucursalListView(AdminRequiredMixin, ListView):
@@ -439,5 +446,138 @@ class AperturaCajaDetailView(CajeroRequiredMixin, AperturaContextMixin, DetailVi
     def get_queryset(self):
         return AperturaCaja.objects.filter(cajero_keycloak_id=self.cajero_id).select_related(
             "caja__sucursal", "asignacion"
-        ).prefetch_related("detalles_inventario")
+        ).prefetch_related(
+            "detalles_inventario__denominacion",
+            "remesas__detalles__denominacion",
+            "remesas__moneda",
+            "remesas__usuario_responsable",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Vistas de Remesas de Efectivo (HU-36)
+# ---------------------------------------------------------------------------
+
+class RemesaContextMixin:
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cajas"
+        context["active_submenu"] = "remesas"
+        return context
+
+
+class RemesaListView(LoginRequiredMixin, AdminOTesoreroRequiredMixin, RemesaContextMixin, ListView):
+    """Consulta histórica de remesas de efectivo (HU-36)."""
+
+    model = Remesa
+    template_name = "cajas/remesa_list.html"
+    context_object_name = "remesas"
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = Remesa.objects.select_related(
+            "caja__sucursal", "moneda", "usuario_responsable", "apertura"
+        ).prefetch_related("detalles__denominacion").order_by("-fecha_hora")
+
+        caja_id = self.request.GET.get("caja")
+        if caja_id:
+            qs = qs.filter(caja_id=caja_id)
+
+        tipo = self.request.GET.get("tipo")
+        if tipo in (Remesa.Tipo.ENTREGA, Remesa.Tipo.DEVOLUCION):
+            qs = qs.filter(tipo=tipo)
+
+        moneda_id = self.request.GET.get("moneda")
+        if moneda_id:
+            qs = qs.filter(moneda_id=moneda_id)
+
+        fecha_desde = self.request.GET.get("fecha_desde")
+        if fecha_desde:
+            qs = qs.filter(fecha_hora__date__gte=fecha_desde)
+
+        fecha_hasta = self.request.GET.get("fecha_hasta")
+        if fecha_hasta:
+            qs = qs.filter(fecha_hora__date__lte=fecha_hasta)
+
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["cajas"] = Caja.objects.filter(activa=True).select_related("sucursal")
+        context["monedas"] = Moneda.objects.filter(activa=True)
+        context["tipos"] = Remesa.Tipo.choices
+        context["filtro_caja"] = self.request.GET.get("caja", "")
+        context["filtro_tipo"] = self.request.GET.get("tipo", "")
+        context["filtro_moneda"] = self.request.GET.get("moneda", "")
+        context["filtro_fecha_desde"] = self.request.GET.get("fecha_desde", "")
+        context["filtro_fecha_hasta"] = self.request.GET.get("fecha_hasta", "")
+        return context
+
+
+class RemesaCreateView(LoginRequiredMixin, AdminOTesoreroRequiredMixin, RemesaContextMixin, TemplateView):
+    """Permite al tesorero registrar una entrega o devolución de efectivo (HU-36)."""
+
+    template_name = "cajas/remesa_form.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.setdefault("form", RemesaForm())
+        context.setdefault("formset", DetalleRemesaFormSet(prefix="desglose"))
+        context["denominaciones"] = list(
+            DenominacionBillete.objects.filter(activa=True, moneda__activa=True)
+            .values("id", "moneda_id", "valor")
+            .order_by("moneda_id", "valor")
+        )
+        return context
+
+    def post(self, request, *args, **kwargs):
+        form = RemesaForm(request.POST)
+        formset = DetalleRemesaFormSet(request.POST, prefix="desglose")
+        errores = []
+
+        if form.is_valid() and formset.is_valid():
+            try:
+                remesa = registrar_remesa(
+                    request=request,
+                    caja_id=form.cleaned_data["caja"].pk,
+                    tipo=form.cleaned_data["tipo"],
+                    moneda_id=form.cleaned_data["moneda"].pk,
+                    desglose=formset.desglose(),
+                    observaciones=form.cleaned_data.get("observaciones", ""),
+                )
+            except (RemesaError, ValidationError) as error:
+                errores = error.messages if hasattr(error, "messages") else [str(error)]
+            else:
+                messages.success(
+                    request,
+                    f"Remesa #{remesa.pk} ({remesa.get_tipo_display()}) registrada correctamente.",
+                )
+                return redirect("remesa-detail", id_remesa=remesa.pk)
+        else:
+            for f in formset:
+                for err_list in f.errors.values():
+                    errores.extend(err_list)
+            for err in formset.non_form_errors():
+                errores.append(err)
+            for err_list in form.errors.values():
+                errores.extend(err_list)
+
+        return self.render_to_response(
+            self.get_context_data(form=form, formset=formset, errores=errores)
+        )
+
+
+class RemesaDetailView(LoginRequiredMixin, AdminOTesoreroRequiredMixin, RemesaContextMixin, DetailView):
+    """Consulta detallada de una remesa de efectivo con su desglose de billetes (HU-36)."""
+
+    model = Remesa
+    template_name = "cajas/remesa_detail.html"
+    context_object_name = "remesa"
+    pk_url_kwarg = "id_remesa"
+
+    def get_queryset(self):
+        return Remesa.objects.select_related(
+            "caja__sucursal", "moneda", "usuario_responsable", "apertura"
+        ).prefetch_related("detalles__denominacion")
+
 

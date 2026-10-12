@@ -1,6 +1,6 @@
 from django import forms
 from cotizaciones.models import Moneda
-from .models import DenominacionBillete
+from .models import DenominacionBillete, AperturaCaja, Remesa, DetalleRemesa
 from .services import MAX_LINEAS_INVENTARIO
 from .models import Sucursal, Caja
 from .models import AsignacionCaja, Caja
@@ -221,3 +221,110 @@ InventarioInicialFormSet = forms.formset_factory(
     extra=0, min_num=1, validate_min=True, can_delete=True,
     max_num=MAX_LINEAS_INVENTARIO, validate_max=True, absolute_max=MAX_LINEAS_INVENTARIO,
 )
+
+
+# ---------------------------------------------------------------------------
+# Formularios de Remesa de Efectivo (HU-36)
+# ---------------------------------------------------------------------------
+
+class RemesaForm(forms.ModelForm):
+    """Formulario para datos principales de una remesa de efectivo (HU-36)."""
+
+    caja = forms.ModelChoiceField(
+        queryset=Caja.objects.filter(
+            activa=True,
+            sucursal__activa=True,
+            aperturas__estado=AperturaCaja.Estado.ABIERTA,
+        ).distinct(),
+        label="Caja destino / origen",
+        widget=forms.Select(attrs={"class": "form-select", "id": "id_caja"}),
+        help_text="Solo se muestran cajas activas con una apertura actualmente abierta.",
+    )
+    moneda = forms.ModelChoiceField(
+        queryset=Moneda.objects.filter(activa=True),
+        label="Moneda",
+        widget=forms.Select(attrs={"class": "form-select", "id": "id_moneda"}),
+    )
+
+    class Meta:
+        model = Remesa
+        fields = ["caja", "tipo", "moneda", "observaciones"]
+        widgets = {
+            "tipo": forms.Select(attrs={"class": "form-select", "id": "id_tipo"}),
+            "observaciones": forms.Textarea(
+                attrs={"class": "form-control", "rows": 2, "placeholder": "Observaciones opcionales"}
+            ),
+        }
+
+
+class DetalleRemesaForm(forms.Form):
+    """Línea de billetes dentro del desglose de una remesa."""
+
+    denominacion = forms.ModelChoiceField(
+        queryset=DenominacionBillete.objects.filter(activa=True, moneda__activa=True),
+        label="Denominación",
+        widget=forms.Select(attrs={"class": "form-select denominacion-select"}),
+    )
+    cantidad = forms.IntegerField(
+        min_value=1,
+        max_value=2147483647,
+        label="Cantidad de billetes",
+        widget=forms.NumberInput(attrs={"class": "form-control cantidad-input", "min": 1, "step": 1, "autocomplete": "off"}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        denominacion = cleaned_data.get("denominacion")
+        cantidad = cleaned_data.get("cantidad")
+        if denominacion and cantidad:
+            if cantidad <= 0:
+                self.add_error("cantidad", "La cantidad debe ser mayor a 0.")
+        return cleaned_data
+
+
+class BaseDetalleRemesaFormSet(forms.BaseFormSet):
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+
+        denominaciones = set()
+        total_lineas = 0
+        for form in self.forms:
+            if not form.cleaned_data or form.cleaned_data.get("DELETE"):
+                continue
+            denom = form.cleaned_data.get("denominacion")
+            if not denom:
+                continue
+            if denom.pk in denominaciones:
+                raise forms.ValidationError("No repita denominaciones dentro del desglose.")
+            denominaciones.add(denom.pk)
+            total_lineas += 1
+
+        if total_lineas == 0:
+            raise forms.ValidationError("Debe ingresar al menos una línea con denominación y cantidad.")
+
+    def desglose(self):
+        """Devuelve el desglose limpio para registrar_remesa."""
+        return [
+            {
+                "denominacion_id": form.cleaned_data["denominacion"].pk,
+                "cantidad": form.cleaned_data["cantidad"],
+            }
+            for form in self.forms
+            if form.cleaned_data and not form.cleaned_data.get("DELETE") and form.cleaned_data.get("denominacion")
+        ]
+
+
+DetalleRemesaFormSet = forms.formset_factory(
+    DetalleRemesaForm,
+    formset=BaseDetalleRemesaFormSet,
+    extra=0,
+    min_num=1,
+    validate_min=True,
+    can_delete=True,
+    max_num=MAX_LINEAS_INVENTARIO,
+    validate_max=True,
+    absolute_max=MAX_LINEAS_INVENTARIO,
+)
+
