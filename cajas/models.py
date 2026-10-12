@@ -268,6 +268,57 @@ class AperturaCaja(models.Model):
             )
         ).values_list("moneda_id", "saldo").order_by("moneda_id"))
 
+    @property
+    def saldos_actuales(self):
+        """Calcula el saldo teórico actual por moneda (saldo inicial + entregas - devoluciones)."""
+        saldos = dict(self.saldos_iniciales)
+        for remesa in self.remesas.all():
+            m_id = remesa.moneda_id
+            if m_id not in saldos:
+                saldos[m_id] = Decimal("0.00")
+            if remesa.tipo == "ENTREGA":
+                saldos[m_id] += remesa.monto_total
+            elif remesa.tipo == "DEVOLUCION":
+                saldos[m_id] -= remesa.monto_total
+        return saldos
+
+    def obtener_saldo_actual(self, moneda_id):
+        """Devuelve el saldo teórico disponible en esta apertura para la moneda dada."""
+        return self.saldos_actuales.get(moneda_id, Decimal("0.00"))
+
+    def obtener_inventario_actual(self, moneda_id=None):
+        """Devuelve un diccionario con el stock actual de billetes por denominación."""
+        qs_inicial = self.detalles_inventario.select_related("denominacion")
+        if moneda_id:
+            qs_inicial = qs_inicial.filter(moneda_id=moneda_id)
+
+        inventario = {}
+        for d in qs_inicial:
+            inventario[d.denominacion_id] = {
+                "denominacion": d.denominacion,
+                "moneda_id": d.moneda_id,
+                "valor": d.valor_denominacion,
+                "cantidad": d.cantidad,
+            }
+
+        remesas = self.remesas.prefetch_related("detalles__denominacion").all()
+        if moneda_id:
+            remesas = remesas.filter(moneda_id=moneda_id)
+
+        for r in remesas:
+            factor = 1 if r.tipo == "ENTREGA" else -1
+            for det in r.detalles.all():
+                d_id = det.denominacion_id
+                if d_id not in inventario:
+                    inventario[d_id] = {
+                        "denominacion": det.denominacion,
+                        "moneda_id": det.denominacion.moneda_id,
+                        "valor": det.valor_denominacion,
+                        "cantidad": 0,
+                    }
+                inventario[d_id]["cantidad"] += factor * det.cantidad
+        return inventario
+
     def __str__(self):
         return f"Apertura {self.pk} — {self.caja} ({self.get_estado_display()})"
 
@@ -304,3 +355,113 @@ class DetalleInventarioInicial(models.Model):
     @property
     def subtotal(self):
         return self.valor_denominacion * self.cantidad
+
+
+class Remesa(models.Model):
+    """Registro de transferencias de efectivo entre Tesorería y una caja (HU-36)."""
+
+    class Tipo(models.TextChoices):
+        ENTREGA = "ENTREGA", "Entrega (Tesorería → Caja)"
+        DEVOLUCION = "DEVOLUCION", "Devolución (Caja → Tesorería)"
+
+    id_remesa = models.BigAutoField(primary_key=True)
+    caja = models.ForeignKey(Caja, on_delete=models.PROTECT, related_name="remesas")
+    apertura = models.ForeignKey(
+        AperturaCaja, on_delete=models.PROTECT, related_name="remesas"
+    )
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    origen = models.CharField(max_length=150)
+    destino = models.CharField(max_length=150)
+    moneda = models.ForeignKey(
+        "cotizaciones.Moneda", on_delete=models.PROTECT, related_name="remesas"
+    )
+    monto_total = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    fecha_hora = models.DateTimeField(default=timezone.now, editable=False)
+    usuario_responsable = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="remesas_registradas",
+    )
+    observaciones = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-fecha_hora"]
+        verbose_name = "Remesa de efectivo"
+        verbose_name_plural = "Remesas de efectivo"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(monto_total__gt=0),
+                name="remesa_monto_positivo",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.caja_id and self.apertura_id and self.apertura.caja_id != self.caja_id:
+            raise ValidationError("La apertura seleccionada no corresponde a la caja indicada.")
+        if self.tipo == self.Tipo.ENTREGA:
+            if not self.origen:
+                self.origen = "Tesorería"
+            if not self.destino and self.caja_id:
+                self.destino = f"Caja {self.caja.codigo} - {self.caja.nombre}"
+        elif self.tipo == self.Tipo.DEVOLUCION:
+            if not self.origen and self.caja_id:
+                self.origen = f"Caja {self.caja.codigo} - {self.caja.nombre}"
+            if not self.destino:
+                self.destino = "Tesorería"
+
+    def __str__(self):
+        return f"Remesa #{self.pk} ({self.get_tipo_display()}) — {self.moneda_id} {self.monto_total}"
+
+
+class DetalleRemesa(models.Model):
+    """Desglose de billetes por denominación de una remesa de efectivo (HU-36)."""
+
+    remesa = models.ForeignKey(
+        Remesa, on_delete=models.CASCADE, related_name="detalles"
+    )
+    denominacion = models.ForeignKey(
+        DenominacionBillete, on_delete=models.PROTECT, related_name="detalles_remesa"
+    )
+    valor_denominacion = models.DecimalField(max_digits=18, decimal_places=2, editable=False)
+    cantidad = models.PositiveIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(2147483647)]
+    )
+
+    class Meta:
+        ordering = ["denominacion__valor"]
+        verbose_name = "Detalle de remesa"
+        verbose_name_plural = "Detalles de remesa"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["remesa", "denominacion"],
+                name="remesa_denominacion_unica",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gt=0),
+                name="remesa_cantidad_positiva",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(valor_denominacion__gt=0),
+                name="remesa_valor_denominacion_positivo",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.denominacion_id and self.remesa_id and self.denominacion.moneda_id != self.remesa.moneda_id:
+            raise ValidationError("La denominación no corresponde a la moneda de la remesa.")
+
+    def save(self, *args, **kwargs):
+        if not self.valor_denominacion and self.denominacion_id:
+            self.valor_denominacion = self.denominacion.valor
+        super().save(*args, **kwargs)
+
+    @property
+    def subtotal(self):
+        return self.valor_denominacion * self.cantidad
+

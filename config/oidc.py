@@ -35,3 +35,28 @@ def keycloak_logout_url(request):
         params["id_token_hint"] = id_token
 
     return f"{logout_endpoint}?{urlencode(params)}"
+
+
+from mozilla_django_oidc.auth import OIDCAuthenticationBackend
+
+
+class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
+    """Sincroniza el nombre y apellido del usuario desde los claims de Keycloak."""
+
+    def create_user(self, claims):
+        user = super().create_user(claims)
+        user.first_name = claims.get("given_name", "") or claims.get("name", "")
+        user.last_name = claims.get("family_name", "")
+        user.save()
+        return user
+
+    def update_user(self, user, claims):
+        user = super().update_user(user, claims)
+        first_name = claims.get("given_name", "") or claims.get("name", "")
+        last_name = claims.get("family_name", "")
+        if first_name or last_name:
+            user.first_name = first_name
+            user.last_name = last_name
+            user.save()
+        return user
+
