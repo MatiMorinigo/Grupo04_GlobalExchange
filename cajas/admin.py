@@ -1,6 +1,9 @@
 from django.contrib import admin
 
-from .models import DenominacionBillete, Remesa, DetalleRemesa
+from .models import (
+    DenominacionBillete, Remesa, DetalleRemesa,
+    CierreCaja, DetalleCierreCaja, ConteoBilleteCierre,
+)
 
 
 @admin.register(DenominacionBillete)
@@ -28,4 +31,26 @@ class RemesaAdmin(admin.ModelAdmin):
     search_fields = ("caja__nombre", "origen", "destino", "usuario_responsable__username")
     readonly_fields = ("fecha_hora",)
     inlines = [DetalleRemesaInline]
+
+
+class DetalleCierreCajaInline(admin.TabularInline):
+    model = DetalleCierreCaja
+    extra = 0
+    readonly_fields = ("moneda", "saldo_teorico", "saldo_fisico", "diferencia", "estado_arqueo")
+
+
+class ConteoBilleteCierreInline(admin.TabularInline):
+    model = ConteoBilleteCierre
+    extra = 0
+    readonly_fields = ("denominacion", "valor_denominacion", "cantidad", "subtotal")
+
+
+@admin.register(CierreCaja)
+class CierreCajaAdmin(admin.ModelAdmin):
+    list_display = ("id_cierre", "apertura", "caja", "fecha_cierre", "usuario_responsable", "hay_diferencias")
+    list_filter = ("fecha_cierre", "apertura__caja")
+    search_fields = ("apertura__caja__nombre", "usuario_responsable__username")
+    readonly_fields = ("fecha_cierre",)
+    inlines = [DetalleCierreCajaInline, ConteoBilleteCierreInline]
+
 

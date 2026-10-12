@@ -465,3 +465,127 @@ class DetalleRemesa(models.Model):
     def subtotal(self):
         return self.valor_denominacion * self.cantidad
 
+
+class CierreCaja(models.Model):
+    """Registro de cierre y arqueo de caja (HU-37)."""
+
+    id_cierre = models.BigAutoField(primary_key=True)
+    apertura = models.OneToOneField(
+        AperturaCaja,
+        on_delete=models.PROTECT,
+        related_name="cierre",
+    )
+    fecha_cierre = models.DateTimeField(default=timezone.now, editable=False)
+    usuario_responsable = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="cierres_registrados",
+    )
+    observaciones = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-fecha_cierre"]
+        verbose_name = "Cierre de caja"
+        verbose_name_plural = "Cierres de caja"
+
+    @property
+    def caja(self):
+        return self.apertura.caja
+
+    @property
+    def hay_diferencias(self):
+        """Indica si al menos una moneda tuvo faltante o sobrante."""
+        return any(d.diferencia != Decimal("0.00") for d in self.detalles.all())
+
+    def __str__(self):
+        return f"Cierre #{self.pk} — Apertura #{self.apertura_id} ({self.caja})"
+
+
+class DetalleCierreCaja(models.Model):
+    """Consolidado de arqueo por moneda con saldo teórico, físico y diferencia (HU-37)."""
+
+    cierre = models.ForeignKey(
+        CierreCaja,
+        on_delete=models.CASCADE,
+        related_name="detalles",
+    )
+    moneda = models.ForeignKey(
+        "cotizaciones.Moneda",
+        on_delete=models.PROTECT,
+        related_name="detalles_cierre",
+    )
+    saldo_teorico = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+    )
+    saldo_fisico = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+    )
+    diferencia = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+    )
+
+    class Meta:
+        ordering = ["moneda__codigo"]
+        verbose_name = "Detalle de cierre de caja"
+        verbose_name_plural = "Detalles de cierre de caja"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cierre", "moneda"],
+                name="cierre_moneda_unica",
+            ),
+        ]
+
+    @property
+    def estado_arqueo(self):
+        if self.diferencia > Decimal("0.00"):
+            return "SOBRANTE"
+        if self.diferencia < Decimal("0.00"):
+            return "FALTANTE"
+        return "CUADRADO"
+
+    def __str__(self):
+        return f"Cierre #{self.cierre_id} — {self.moneda_id}: Teórico {self.saldo_teorico}, Físico {self.saldo_fisico}, Dif {self.diferencia}"
+
+
+class ConteoBilleteCierre(models.Model):
+    """Conteo físico final de billetes por denominación en el arqueo (HU-37)."""
+
+    cierre = models.ForeignKey(
+        CierreCaja,
+        on_delete=models.CASCADE,
+        related_name="conteos_billetes",
+    )
+    denominacion = models.ForeignKey(
+        DenominacionBillete,
+        on_delete=models.PROTECT,
+        related_name="conteos_cierre",
+    )
+    valor_denominacion = models.DecimalField(max_digits=18, decimal_places=2, editable=False)
+    cantidad = models.PositiveIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(2147483647)]
+    )
+
+    class Meta:
+        ordering = ["denominacion__moneda__codigo", "denominacion__valor"]
+        verbose_name = "Conteo de billete en cierre"
+        verbose_name_plural = "Conteos de billetes en cierre"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cierre", "denominacion"],
+                name="cierre_denominacion_unica",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.valor_denominacion and self.denominacion_id:
+            self.valor_denominacion = self.denominacion.valor
+        super().save(*args, **kwargs)
+
+    @property
+    def subtotal(self):
+        return self.valor_denominacion * self.cantidad
+
+
