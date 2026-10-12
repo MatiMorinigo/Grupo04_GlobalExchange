@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     DenominacionBillete, Remesa, DetalleRemesa,
     CierreCaja, DetalleCierreCaja, ConteoBilleteCierre,
+    ToleranciaArqueo, AlertaArqueo, DetalleAlertaArqueo, EnvioAlertaArqueo,
 )
 
 
@@ -31,6 +32,34 @@ class RemesaAdmin(admin.ModelAdmin):
     search_fields = ("caja__nombre", "origen", "destino", "usuario_responsable__username")
     readonly_fields = ("fecha_hora",)
     inlines = [DetalleRemesaInline]
+
+
+@admin.register(ToleranciaArqueo)
+class ToleranciaArqueoAdmin(admin.ModelAdmin):
+    list_display = ("moneda", "monto_maximo", "fecha_modificacion", "modificado_por")
+    readonly_fields = ("fecha_modificacion", "modificado_por")
+
+
+class DetalleAlertaArqueoInline(admin.TabularInline):
+    model = DetalleAlertaArqueo
+    extra = 0
+    can_delete = False
+    readonly_fields = ("moneda", "diferencia", "tolerancia_aplicada")
+
+
+class EnvioAlertaArqueoInline(admin.TabularInline):
+    model = EnvioAlertaArqueo
+    extra = 0
+    can_delete = False
+    readonly_fields = ("email", "rol", "estado", "error", "fecha_envio")
+
+
+@admin.register(AlertaArqueo)
+class AlertaArqueoAdmin(admin.ModelAdmin):
+    list_display = ("id_alerta", "cierre", "fecha_creacion")
+    list_filter = ("fecha_creacion",)
+    readonly_fields = ("cierre", "fecha_creacion")
+    inlines = [DetalleAlertaArqueoInline, EnvioAlertaArqueoInline]
 
 
 class DetalleCierreCajaInline(admin.TabularInline):

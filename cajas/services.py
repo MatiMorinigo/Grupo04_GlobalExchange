@@ -15,6 +15,7 @@ from .models import (
     DetalleInventarioInicial, Sucursal, Remesa, DetalleRemesa,
     CierreCaja, DetalleCierreCaja, ConteoBilleteCierre,
 )
+from .alertas import evaluar_cierre
 
 MAX_LINEAS_INVENTARIO = 100
 
@@ -176,6 +177,7 @@ def registrar_remesa(
     """Registra una remesa (entrega o devolución) entre Tesorería y una caja (HU-36).
 
     Valida:
+
     - Permisos: tesorero o administrador.
     - Caja y apertura activa con bloqueo transaccional concurrente.
     - Moneda y denominaciones válidas y activas.
@@ -452,6 +454,10 @@ def cerrar_caja(
                     )
                 )
             DetalleCierreCaja.objects.bulk_create(detalles_cierre)
+
+            # HU-32: comparar cada diferencia con la tolerancia de su moneda y
+            # registrar la alerta en esta misma transacción.
+            evaluar_cierre(cierre, detalles_cierre)
 
             # Guardar conteo físico de billetes
             conteos_objs = [

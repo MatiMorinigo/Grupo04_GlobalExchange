@@ -8,6 +8,7 @@ generada automáticamente con Sphinx a partir de los docstrings del proyecto.
    :maxdepth: 2
    :caption: Contenido:
 
+   cajas
    clientes
    core
    cotizaciones

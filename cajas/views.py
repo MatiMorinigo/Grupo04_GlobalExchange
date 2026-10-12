@@ -38,6 +38,9 @@ from .services import (
     cerrar_caja, CierreCajaError, obtener_cajero_autenticado,
 )
 from cotizaciones.models import Moneda
+from django.views.generic import FormView
+from .forms import ToleranciasArqueoForm
+from .models import AlertaArqueo
 
 
 class SucursalListView(AdminRequiredMixin, ListView):
@@ -754,4 +757,49 @@ class CierreCajaDetailView(LoginRequiredMixin, CierreContextMixin, DetailView):
         )
 
 
+class ToleranciaArqueoView(AdminRequiredMixin, FormView):
+    """Configura la diferencia máxima tolerada por moneda en el arqueo (HU-32).
 
+    Solo el administrador accede. Muestra todas las monedas activas; las que
+    nunca se configuraron aparecen en 0 (cualquier diferencia alerta).
+    """
+
+    form_class = ToleranciasArqueoForm
+    template_name = "cajas/tolerancia_form.html"
+    success_url = reverse_lazy("tolerancia-arqueo")
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            form.guardar(self.request.user)
+        messages.success(
+            self.request,
+            "Las tolerancias de arqueo fueron actualizadas correctamente.",
+        )
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cajas"
+        context["active_submenu"] = "tolerancias"
+        return context
+
+
+class AlertaArqueoListView(AdminOTesoreroRequiredMixin, ListView):
+    """Consulta de alertas de arqueo para administrador y tesorero (HU-32)."""
+
+    model = AlertaArqueo
+    template_name = "cajas/alerta_list.html"
+    context_object_name = "alertas"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return AlertaArqueo.objects.select_related(
+            "cierre__apertura__caja__sucursal",
+            "cierre__apertura__asignacion",
+        ).prefetch_related("detalles__moneda", "envios")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_menu"] = "cajas"
+        context["active_submenu"] = "alertas"
+        return context

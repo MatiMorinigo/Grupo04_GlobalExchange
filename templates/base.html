@@ -456,6 +456,23 @@
                                     <p>Remesas de efectivo</p>
                                 </a>
                             </li>
+                            <li class="nav-item">
+                                <a href="{% url 'alerta-arqueo-list' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'alertas' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-exclamation-triangle"></i>
+                                    <p>Alertas de arqueo</p>
+                                </a>
+                            </li>
+                            {% endif %}
+
+                            {% if es_administrador %}
+                            <li class="nav-item">
+                                <a href="{% url 'tolerancia-arqueo' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'tolerancias' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-sliders"></i>
+                                    <p>Tolerancia de arqueo</p>
+                                </a>
+                            </li>
                             {% endif %}
 
                             {% if es_cajero %}

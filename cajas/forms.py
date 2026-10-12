@@ -1,6 +1,9 @@
+from decimal import Decimal
+
 from django import forms
 from cotizaciones.models import Moneda
 from .models import DenominacionBillete, AperturaCaja, Remesa, DetalleRemesa, CierreCaja
+from .models import ToleranciaArqueo
 from .services import MAX_LINEAS_INVENTARIO
 from .models import Sucursal, Caja
 from .models import AsignacionCaja, Caja
@@ -402,6 +405,52 @@ ConteoBilleteFormSet = forms.formset_factory(
     validate_max=True,
     absolute_max=MAX_LINEAS_INVENTARIO,
 )
+
+
+class ToleranciasArqueoForm(forms.Form):
+    """Una tolerancia por cada moneda activa, guardada en un solo envío (HU-32)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.monedas = list(Moneda.objects.filter(activa=True).order_by("codigo"))
+        actuales = {
+            t.moneda_id: t.monto_maximo for t in ToleranciaArqueo.objects.all()
+        }
+        for moneda in self.monedas:
+            self.fields[self.nombre_campo(moneda)] = forms.DecimalField(
+                label=f"{moneda.codigo} — {moneda.nombre}",
+                min_value=Decimal("0.00"),
+                max_digits=18,
+                decimal_places=2,
+                initial=actuales.get(moneda.codigo, Decimal("0.00")),
+                widget=forms.NumberInput(attrs={
+                    "class": "form-control",
+                    "step": "0.01",
+                    "min": "0",
+                }),
+                error_messages={
+                    "min_value": "La tolerancia no puede ser negativa.",
+                },
+            )
+
+    @staticmethod
+    def nombre_campo(moneda):
+        return f"tolerancia_{moneda.codigo}"
+
+    def campos_por_moneda(self):
+        """Devuelve pares (moneda, campo) para dibujar la tabla."""
+        return [(m, self[self.nombre_campo(m)]) for m in self.monedas]
+
+    def guardar(self, usuario):
+        """Crea o actualiza la tolerancia de cada moneda del formulario."""
+        for moneda in self.monedas:
+            ToleranciaArqueo.objects.update_or_create(
+                moneda=moneda,
+                defaults={
+                    "monto_maximo": self.cleaned_data[self.nombre_campo(moneda)],
+                    "modificado_por": usuario,
+                },
+            )
 
 
 class CierreCajaForm(forms.ModelForm):

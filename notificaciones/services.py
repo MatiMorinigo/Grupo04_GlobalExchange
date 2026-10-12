@@ -112,6 +112,6 @@ def _enviar(conexion, asunto, cuerpo, email):
     try:
         EmailMessage(asunto, cuerpo, to=[email], connection=conexion).send()
     except ERRORES_DE_ENVIO as exc:
-        logger.exception("No se pudo notificar la tasa a %s.", email)
+        logger.exception("No se pudo enviar el correo a %s.", email)
         return str(exc)
     return ""

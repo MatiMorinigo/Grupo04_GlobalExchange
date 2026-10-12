@@ -25,9 +25,14 @@ from .views import (
     CierreCajaListView,
     CierreCajaCreateView,
     CierreCajaDetailView,
+    ToleranciaArqueoView,
+    AlertaArqueoListView,
 )
 
 urlpatterns = [
+    # Tolerancia y alertas de arqueo (HU-32)
+    path("tolerancias/", ToleranciaArqueoView.as_view(), name="tolerancia-arqueo"),
+    path("alertas/", AlertaArqueoListView.as_view(), name="alerta-arqueo-list"),
     # Cierre y arqueo de caja (HU-37)
     path("cierres/", CierreCajaListView.as_view(), name="cierre-list"),
     path("aperturas/<int:id_apertura>/cerrar/", CierreCajaCreateView.as_view(), name="cierre-create"),

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Alertas de arqueo | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">
+                    <i class="bi bi-exclamation-triangle text-warning me-2"></i>Alertas de arqueo
+                </h3>
+            </div>
+            {% if es_administrador %}
+            <div class="col-sm-6 text-end">
+                <a href="{% url 'tolerancia-arqueo' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-sliders me-1"></i>Configurar tolerancias
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card card-warning card-outline shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="text-center">Alerta</th>
+                        <th>Caja</th>
+                        <th>Cajero</th>
+                        <th>Fecha</th>
+                        <th>Monedas excedidas</th>
+                        <th>Correos</th>
+                        <th class="text-center">Cierre</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for alerta in alertas %}
+                    <tr>
+                        <td class="text-center fw-bold">#{{ alerta.pk }}</td>
+                        <td>
+                            <strong>{{ alerta.cierre.apertura.caja.nombre }}</strong>
+                            <span class="text-muted d-block small">{{ alerta.cierre.apertura.caja.sucursal.nombre }}</span>
+                        </td>
+                        <td>{{ alerta.cierre.apertura.asignacion.cajero_username }}</td>
+                        <td>{{ alerta.fecha_creacion|date:"d/m/Y H:i:s" }}</td>
+                        <td>
+                            {% for d in alerta.detalles.all %}
+                            <div>
+                                <span class="badge {% if d.estado_arqueo == 'FALTANTE' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                    {{ d.estado_arqueo }}
+                                </span>
+                                <strong>{{ d.moneda.codigo }}</strong>
+                                {{ d.diferencia_absoluta|formato_numero:2 }}
+                                <span class="text-muted small">(límite {{ d.tolerancia_aplicada|formato_numero:2 }})</span>
+                            </div>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% for e in alerta.envios.all %}
+                            <div class="small">
+                                {% if e.estado == 'ENVIADA' %}
+                                <i class="bi bi-check-circle-fill text-success"></i>
+                                {% else %}
+                                <i class="bi bi-x-circle-fill text-danger"></i>
+                                {% endif %}
+                                {{ e.email|default:"—" }}
+                                {% if e.rol %}<span class="text-muted">({{ e.rol }})</span>{% endif %}
+                                {% if e.error %}<div class="text-danger">{{ e.error }}</div>{% endif %}
+                            </div>
+                            {% empty %}
+                            <span class="text-muted small">Envío pendiente</span>
+                            {% endfor %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'cierre-detail' alerta.cierre_id %}" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-receipt me-1"></i>#{{ alerta.cierre_id }}
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+                            No se registraron alertas de arqueo.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% if is_paginated %}
+    <div class="card-footer d-flex justify-content-between">
+        {% if page_obj.has_previous %}
+        <a class="btn btn-outline-secondary btn-sm" href="?page={{ page_obj.previous_page_number }}">Anterior</a>
+        {% else %}<span></span>{% endif %}
+        <span class="small text-muted">Página {{ page_obj.number }} de {{ paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+        <a class="btn btn-outline-secondary btn-sm" href="?page={{ page_obj.next_page_number }}">Siguiente</a>
+        {% else %}<span></span>{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

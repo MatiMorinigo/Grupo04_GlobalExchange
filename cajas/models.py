@@ -550,6 +550,138 @@ class DetalleCierreCaja(models.Model):
         return f"Cierre #{self.cierre_id} — {self.moneda_id}: Teórico {self.saldo_teorico}, Físico {self.saldo_fisico}, Dif {self.diferencia}"
 
 
+class ToleranciaArqueo(models.Model):
+    """Diferencia máxima tolerada en el arqueo para una moneda (HU-32).
+
+    Se compara en valor absoluto, en la propia moneda, sin conversión. Una
+    moneda sin fila se trata como tolerancia cero. El cero es un valor válido.
+    """
+
+    moneda = models.OneToOneField(
+        "cotizaciones.Moneda",
+        on_delete=models.PROTECT,
+        related_name="tolerancia_arqueo",
+    )
+    monto_maximo = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+        verbose_name="Diferencia máxima tolerada",
+    )
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    modificado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tolerancias_arqueo_modificadas",
+    )
+
+    class Meta:
+        ordering = ["moneda__codigo"]
+        verbose_name = "Tolerancia de arqueo"
+        verbose_name_plural = "Tolerancias de arqueo"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(monto_maximo__gte=0),
+                name="tolerancia_arqueo_no_negativa",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.moneda_id}: {self.monto_maximo}"
+
+
+class AlertaArqueo(models.Model):
+    """Alerta generada cuando un cierre supera la tolerancia en alguna moneda (HU-32).
+
+    Hay a lo sumo una por cierre, que a su vez es único por apertura.
+    """
+
+    id_alerta = models.BigAutoField(primary_key=True)
+    cierre = models.OneToOneField(
+        CierreCaja,
+        on_delete=models.PROTECT,
+        related_name="alerta",
+    )
+    fecha_creacion = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        ordering = ["-fecha_creacion"]
+        verbose_name = "Alerta de arqueo"
+        verbose_name_plural = "Alertas de arqueo"
+
+    def __str__(self):
+        return f"Alerta #{self.pk} — Cierre #{self.cierre_id}"
+
+
+class DetalleAlertaArqueo(models.Model):
+    """Moneda excedida de una alerta, con copia de la tolerancia aplicada."""
+
+    alerta = models.ForeignKey(
+        AlertaArqueo,
+        on_delete=models.CASCADE,
+        related_name="detalles",
+    )
+    moneda = models.ForeignKey(
+        "cotizaciones.Moneda",
+        on_delete=models.PROTECT,
+        related_name="detalles_alerta_arqueo",
+    )
+    diferencia = models.DecimalField(max_digits=18, decimal_places=2)
+    tolerancia_aplicada = models.DecimalField(max_digits=18, decimal_places=2)
+
+    class Meta:
+        ordering = ["moneda__codigo"]
+        verbose_name = "Detalle de alerta de arqueo"
+        verbose_name_plural = "Detalles de alerta de arqueo"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["alerta", "moneda"],
+                name="alerta_arqueo_moneda_unica",
+            ),
+        ]
+
+    @property
+    def estado_arqueo(self):
+        return "SOBRANTE" if self.diferencia > Decimal("0.00") else "FALTANTE"
+
+    @property
+    def diferencia_absoluta(self):
+        return abs(self.diferencia)
+
+    def __str__(self):
+        return f"{self.moneda_id}: {self.diferencia} (límite {self.tolerancia_aplicada})"
+
+
+class EnvioAlertaArqueo(models.Model):
+    """Resultado del envío de una alerta a un destinatario."""
+
+    class Estado(models.TextChoices):
+        ENVIADA = "ENVIADA", "Enviada"
+        FALLIDA = "FALLIDA", "Fallida"
+
+    alerta = models.ForeignKey(
+        AlertaArqueo,
+        on_delete=models.CASCADE,
+        related_name="envios",
+    )
+    email = models.CharField(max_length=254, blank=True, default="")
+    rol = models.CharField(max_length=30)
+    estado = models.CharField(max_length=7, choices=Estado.choices)
+    error = models.TextField(blank=True, default="")
+    fecha_envio = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        ordering = ["id"]
+        verbose_name = "Envío de alerta de arqueo"
+        verbose_name_plural = "Envíos de alertas de arqueo"
+
+    def __str__(self):
+        return f"{self.email or self.rol} — {self.get_estado_display()}"
+
+
 class ConteoBilleteCierre(models.Model):
     """Conteo físico final de billetes por denominación en el arqueo (HU-37)."""
 

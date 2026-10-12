@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Tolerancia de arqueo | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">
+                    <i class="bi bi-sliders text-primary me-2"></i>Tolerancia de arqueo
+                </h3>
+            </div>
+            <div class="col-sm-6 text-end">
+                <a href="{% url 'alerta-arqueo-list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Ver alertas
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card card-primary card-outline shadow-sm">
+    <div class="card-header">
+        <h4 class="card-title fw-bold mb-0">Diferencia máxima tolerada por moneda</h4>
+    </div>
+    <form method="post" novalidate>
+        {% csrf_token %}
+        <div class="card-body">
+            <p class="text-body-secondary">
+                Si en un cierre la diferencia entre el saldo físico y el teórico, en valor
+                absoluto, <strong>supera</strong> el límite de su moneda, se genera una alerta
+                para el Administrador y el Tesorero. Una diferencia igual al límite no alerta.
+                Las monedas sin configurar se tratan como 0 (cualquier diferencia alerta).
+            </p>
+
+            {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+                {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Moneda</th>
+                            <th style="width: 40%;">Diferencia máxima tolerada</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for moneda, campo in form.campos_por_moneda %}
+                        <tr>
+                            <td>
+                                <label for="{{ campo.id_for_label }}" class="fw-bold mb-0">
+                                    {{ moneda.codigo }} — {{ moneda.nombre }}
+                                </label>
+                            </td>
+                            <td>
+                                <div class="input-group">
+                                    <span class="input-group-text">{{ moneda.simbolo }}</span>
+                                    {{ campo }}
+                                </div>
+                                {% for error in campo.errors %}
+                                <div class="text-danger small">{{ error }}</div>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2" class="text-center text-muted py-4">
+                                No hay monedas activas.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-1"></i>Guardar tolerancias
+            </button>
+            <a href="{% url 'home' %}" class="btn btn-secondary">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

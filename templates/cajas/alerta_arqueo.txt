@@ -1,0 +1,15 @@
+{% load formato_numeros %}{% autoescape off %}Hola:
+
+El arqueo de una caja superó la diferencia máxima tolerada.
+
+Caja: {{ caja.nombre }} ({{ caja.codigo }})
+Sucursal: {{ sucursal.nombre }}
+Cajero: {{ cajero }}
+Cierre: #{{ cierre.pk }}
+Fecha de cierre: {{ cierre.fecha_cierre|date:"d/m/Y H:i" }}
+
+Monedas con diferencia sobre el límite:
+{% for d in detalles %}- {{ d.moneda.codigo }}: {{ d.estado_arqueo|lower }} de {{ d.diferencia_absoluta|formato_numero:2 }} (límite tolerado: {{ d.tolerancia_aplicada|formato_numero:2 }})
+{% endfor %}
+Global Exchange
+{% endautoescape %}

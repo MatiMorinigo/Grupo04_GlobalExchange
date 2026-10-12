@@ -3,6 +3,7 @@ import requests
 
 from django.conf import settings
 
+from urllib.parse import quote
 from uuid import UUID
 
 class KeycloakServiceError(Exception):
@@ -32,15 +33,19 @@ def obtener_token_servicio():
     return respuesta.json()["access_token"]
 
 
-def obtener_cajeros_keycloak():
-    """Obtiene usuarios con el rol de realm 'cajero'."""
+def obtener_usuarios_por_rol(rol):
+    """Obtiene los usuarios habilitados que tienen un rol de realm.
+
+    Devuelve una lista de diccionarios con ``id``, ``username``, ``nombre``,
+    ``apellido`` y ``email``. Lanza ``KeycloakServiceError`` si falla la consulta.
+    """
 
     try:
         token = obtener_token_servicio()
 
         url = (
             f"{settings.KEYCLOAK_BASE_URL}/admin/realms/"
-            f"{settings.KEYCLOAK_REALM}/roles/cajero/users"
+            f"{settings.KEYCLOAK_REALM}/roles/{quote(rol, safe='')}/users"
         )
 
         cajeros = []
@@ -81,8 +86,15 @@ def obtener_cajeros_keycloak():
 
     except (requests.RequestException, ValueError, KeyError) as error:
         raise KeycloakServiceError(
-            "No se pudo obtener la lista de cajeros desde Keycloak."
+            f"No se pudo obtener la lista de usuarios con rol '{rol}' "
+            "desde Keycloak."
         ) from error
+
+
+def obtener_cajeros_keycloak():
+    """Obtiene usuarios con el rol de realm 'cajero'."""
+
+    return obtener_usuarios_por_rol("cajero")
 
 
 def obtener_cajero_verificado(cajero_id):
