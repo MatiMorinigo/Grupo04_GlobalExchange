@@ -1,0 +1,21 @@
+<tr class="desglose-linea">
+    <td>
+        <label class="visually-hidden" for="{{ form.denominacion.id_for_label }}">Denominación</label>
+        {{ form.denominacion }}
+        {{ form.denominacion.errors }}
+    </td>
+    <td>
+        <label class="visually-hidden" for="{{ form.cantidad.id_for_label }}">Cantidad de billetes</label>
+        {{ form.cantidad }}
+        {{ form.cantidad.errors }}
+        {{ form.non_field_errors }}
+    </td>
+    <td class="subtotal-col text-end fw-semibold align-middle">
+        <span class="linea-subtotal">0.00</span>
+    </td>
+    <td class="text-center align-middle">
+        <label class="btn btn-outline-danger btn-sm mb-0 cursor-pointer" for="{{ form.DELETE.id_for_label }}">
+            {{ form.DELETE }} <i class="bi bi-trash" aria-hidden="true"></i> Quitar
+        </label>
+    </td>
+</tr>

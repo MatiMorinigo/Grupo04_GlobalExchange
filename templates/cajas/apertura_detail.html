@@ -2,32 +2,126 @@
 {% load formato_numeros %}
 {% block title %}Resumen de apertura | Global Exchange{% endblock %}
 {% block content_header %}
-<div class="app-content-header"><div class="container-fluid"><h3>Resumen de apertura #{{ apertura.pk }}</h3></div></div>
+<div class="app-content-header">
+    <div class="container-fluid">
+        <h3>Resumen de apertura #{{ apertura.pk }}</h3>
+    </div>
+</div>
 {% endblock %}
 {% block content %}
 <div class="card card-primary card-outline">
-    <div class="card-header"><h3 class="card-title">{{ apertura.caja }}</h3></div>
+    <div class="card-header">
+        <h3 class="card-title">{{ apertura.caja }}</h3>
+    </div>
     <div class="card-body">
         <dl class="row">
-            <dt class="col-sm-3">Estado</dt><dd class="col-sm-9">{{ apertura.get_estado_display }}</dd>
-            <dt class="col-sm-3">Fecha y hora real</dt><dd class="col-sm-9">{{ apertura.fecha_apertura|date:"d/m/Y H:i:s" }}</dd>
-            <dt class="col-sm-3">Cajero responsable (Keycloak)</dt><dd class="col-sm-9">{{ apertura.cajero_keycloak_id }}</dd>
-            <dt class="col-sm-3">Asignación</dt><dd class="col-sm-9">#{{ apertura.asignacion_id }} · {{ apertura.asignacion.turno }}</dd>
-            {% if apertura.fecha_cierre %}<dt class="col-sm-3">Cierre</dt><dd class="col-sm-9">{{ apertura.fecha_cierre|date:"d/m/Y H:i:s" }}</dd>{% endif %}
+            <dt class="col-sm-3">Estado</dt>
+            <dd class="col-sm-9">{{ apertura.get_estado_display }}</dd>
+            <dt class="col-sm-3">Fecha y hora real</dt>
+            <dd class="col-sm-9">{{ apertura.fecha_apertura|date:"d/m/Y H:i:s" }}</dd>
+            <dt class="col-sm-3">Cajero responsable (Keycloak)</dt>
+            <dd class="col-sm-9">{{ apertura.cajero_keycloak_id }}</dd>
+            <dt class="col-sm-3">Asignación</dt>
+            <dd class="col-sm-9">#{{ apertura.asignacion_id }} · {{ apertura.asignacion.turno }}</dd>
+            {% if apertura.fecha_cierre %}<dt class="col-sm-3">Cierre</dt>
+            <dd class="col-sm-9">{{ apertura.fecha_cierre|date:"d/m/Y H:i:s" }}</dd>{% endif %}
         </dl>
+
         <h4>Inventario inicial</h4>
         <div class="table-responsive">
             <table class="table table-striped">
-                <thead><tr><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes</th><th>Subtotal</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>Moneda</th>
+                        <th>Denominación</th>
+                        <th>Cantidad de billetes</th>
+                        <th>Subtotal</th>
+                    </tr>
+                </thead>
                 <tbody>{% for detalle in apertura.detalles_inventario.all %}
-                    <tr><td>{{ detalle.moneda_id }}</td><td>{{ detalle.valor_denominacion|formato_numero:2 }}</td><td>{{ detalle.cantidad }}</td><td>{{ detalle.subtotal|formato_numero:2 }}</td></tr>
-                {% endfor %}</tbody>
+                    <tr>
+                        <td>{{ detalle.moneda_id }}</td>
+                        <td>{{ detalle.valor_denominacion|formato_numero:2 }}</td>
+                        <td>{{ detalle.cantidad }}</td>
+                        <td>{{ detalle.subtotal|formato_numero:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
             </table>
         </div>
-        <h4>Saldos iniciales por moneda</h4>
-        <table class="table"><thead><tr><th>Moneda</th><th>Saldo inicial</th></tr></thead>
-            <tbody>{% for moneda, saldo in apertura.saldos_iniciales.items %}<tr><td>{{ moneda }}</td><td>{{ saldo|formato_numero:2 }}</td></tr>{% endfor %}</tbody>
-        </table>
+
+        <div class="row my-3">
+            <div class="col-md-6">
+                <h4>Saldos iniciales por moneda</h4>
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Moneda</th>
+                            <th>Saldo inicial</th>
+                        </tr>
+                    </thead>
+                    <tbody>{% for moneda, saldo in apertura.saldos_iniciales.items %}<tr>
+                            <td>{{ moneda }}</td>
+                            <td>{{ saldo|formato_numero:2 }}</td>
+                        </tr>{% endfor %}</tbody>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h4>Saldos actuales / teóricos</h4>
+                <table class="table table-bordered table-success">
+                    <thead>
+                        <tr>
+                            <th>Moneda</th>
+                            <th>Saldo teórico disponible</th>
+                        </tr>
+                    </thead>
+                    <tbody>{% for moneda, saldo in apertura.saldos_actuales.items %}<tr>
+                            <td class="fw-bold">{{ moneda }}</td>
+                            <td class="fw-bold">{{ saldo|formato_numero:2 }}</td>
+                        </tr>{% endfor %}</tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if apertura.remesas.exists %}
+        <h4 class="mt-4">Remesas de efectivo en la sesión</h4>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Fecha y hora</th>
+                        <th>Tipo</th>
+                        <th>Origen</th>
+                        <th>Destino</th>
+                        <th>Moneda</th>
+                        <th class="text-end">Monto total</th>
+                        <th>Responsable</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rem in apertura.remesas.all %}
+                    <tr>
+                        <td>{{ rem.pk }}</td>
+                        <td>{{ rem.fecha_hora|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            {% if rem.tipo == "ENTREGA" %}
+                            <span class="badge bg-success">Entrega</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">Devolución</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ rem.origen }}</td>
+                        <td>{{ rem.destino }}</td>
+                        <td>{{ rem.moneda_id }}</td>
+                        <td class="text-end fw-bold">{{ rem.monto_total|formato_numero:2 }}</td>
+                        <td>{{ rem.usuario_responsable.get_full_name|default:rem.usuario_responsable.username }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
     </div>
     <div class="card-footer"><a class="btn btn-secondary" href="{% url 'apertura-list' %}">Volver a mis cajas</a></div>
 </div>
