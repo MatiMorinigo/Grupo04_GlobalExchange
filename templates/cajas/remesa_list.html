@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Historial de Remesas de Efectivo | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h3 class="mb-0"><i class="bi bi-arrow-down-up text-primary me-2"></i>Remesas de Efectivo</h3>
+                <small class="text-body-secondary">Consulta histórica y abastecimiento de efectivo entre Tesorería y cajas</small>
+            </div>
+            <div>
+                <a href="{% url 'remesa-create' %}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i>Registrar remesa
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Card de Filtros -->
+    <div class="card card-outline card-secondary mb-4 shadow-sm">
+        <div class="card-header py-2">
+            <h5 class="card-title mb-0 fs-6"><i class="bi bi-funnel me-1"></i>Filtros de búsqueda</h5>
+        </div>
+        <div class="card-body py-3">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="filtro-caja" class="form-label small fw-semibold">Caja</label>
+                    <select name="caja" id="filtro-caja" class="form-select form-select-sm">
+                        <option value="">Todas las cajas</option>
+                        {% for c in cajas %}
+                        <option value="{{ c.pk }}" {% if filtro_caja == c.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ c.sucursal.nombre }} - {{ c.nombre }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="filtro-tipo" class="form-label small fw-semibold">Tipo de remesa</label>
+                    <select name="tipo" id="filtro-tipo" class="form-select form-select-sm">
+                        <option value="">Todos los tipos</option>
+                        {% for val, label in tipos %}
+                        <option value="{{ val }}" {% if filtro_tipo == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="filtro-moneda" class="form-label small fw-semibold">Moneda</label>
+                    <select name="moneda" id="filtro-moneda" class="form-select form-select-sm">
+                        <option value="">Todas</option>
+                        {% for m in monedas %}
+                        <option value="{{ m.pk }}" {% if filtro_moneda == m.pk %}selected{% endif %}>{{ m.codigo }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="filtro-desde" class="form-label small fw-semibold">Desde</label>
+                    <input type="date" name="fecha_desde" id="filtro-desde" value="{{ filtro_fecha_desde }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-2">
+                    <label for="filtro-hasta" class="form-label small fw-semibold">Hasta</label>
+                    <input type="date" name="fecha_hasta" id="filtro-hasta" value="{{ filtro_fecha_hasta }}" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-1 d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-primary w-100" title="Filtrar">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    <a href="{% url 'remesa-list' %}" class="btn btn-sm btn-outline-secondary" title="Limpiar">
+                        <i class="bi bi-x-circle"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Card de Resultados / Historial -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th class="text-center" style="width: 5%;">#</th>
+                            <th style="width: 15%;">Fecha y hora</th>
+                            <th style="width: 14%;">Tipo</th>
+                            <th style="width: 16%;">Origen</th>
+                            <th style="width: 16%;">Destino</th>
+                            <th style="width: 8%;">Moneda</th>
+                            <th class="text-end" style="width: 12%;">Monto total</th>
+                            <th style="width: 14%;">Responsable</th>
+                            <th class="text-center" style="width: 10%;">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for remesa in remesas %}
+                        <tr>
+                            <td class="text-center fw-bold">{{ remesa.pk }}</td>
+                            <td>
+                                <i class="bi bi-clock me-1 text-muted"></i>{{ remesa.fecha_hora|date:"d/m/Y H:i" }}
+                            </td>
+                            <td>
+                                {% if remesa.tipo == "ENTREGA" %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-box-arrow-in-down me-1"></i>Entrega
+                                </span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">
+                                    <i class="bi bi-box-arrow-up me-1"></i>Devolución
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="small fw-semibold">{{ remesa.origen }}</td>
+                            <td class="small fw-semibold">{{ remesa.destino }}</td>
+                            <td><span class="badge bg-secondary">{{ remesa.moneda_id }}</span></td>
+                            <td class="text-end fw-bold">
+                                {{ remesa.monto_total|formato_numero:2 }}
+                            </td>
+                            <td class="small text-truncate" style="max-width: 140px;" title="{{ remesa.usuario_responsable }}">
+                                <i class="bi bi-person me-1"></i>{{ remesa.usuario_responsable.get_full_name|default:remesa.usuario_responsable.username }}
+                            </td>
+                            <td class="text-center">
+                                <a href="{% url 'remesa-detail' remesa.pk %}" class="btn btn-sm btn-outline-info" title="Ver desglose y detalle">
+                                    <i class="bi bi-eye"></i> Detalle
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center py-5 text-muted">
+                                <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                                No se encontraron remesas de efectivo registradas con los criterios seleccionados.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if is_paginated %}
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <span class="small text-muted">Página {{ page_obj.number }} de {{ paginator.num_pages }}</span>
+            <ul class="pagination pagination-sm mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}&caja={{ filtro_caja }}&tipo={{ filtro_tipo }}&moneda={{ filtro_moneda }}&fecha_desde={{ filtro_fecha_desde }}&fecha_hasta={{ filtro_fecha_hasta }}">Anterior</a>
+                </li>
+                {% endif %}
+                <li class="page-item active"><span class="page-link">{{ page_obj.number }}</span></li>
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}&caja={{ filtro_caja }}&tipo={{ filtro_tipo }}&moneda={{ filtro_moneda }}&fecha_desde={{ filtro_fecha_desde }}&fecha_hasta={{ filtro_fecha_hasta }}">Siguiente</a>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

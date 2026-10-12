@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Detalle de Remesa #{{ remesa.pk }} | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-sm-6">
+                <h3 class="mb-0">
+                    <i class="bi bi-receipt text-primary me-2"></i>Remesa #{{ remesa.pk }}
+                </h3>
+            </div>
+            <div class="col-sm-6 text-end">
+                <a href="{% url 'remesa-list' %}" class="btn btn-outline-secondary me-2">
+                    <i class="bi bi-arrow-left me-1"></i>Volver al historial
+                </a>
+                <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+                    <i class="bi bi-printer me-1"></i>Imprimir comprobante
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card card-primary card-outline shadow-sm mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="card-title fw-bold mb-0">Información del movimiento</h4>
+                <div>
+                    {% if remesa.tipo == "ENTREGA" %}
+                    <span class="badge bg-success fs-6">
+                        <i class="bi bi-box-arrow-in-down me-1"></i>Entrega (Tesorería → Caja)
+                    </span>
+                    {% else %}
+                    <span class="badge bg-warning text-dark fs-6">
+                        <i class="bi bi-box-arrow-up me-1"></i>Devolución (Caja → Tesorería)
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card-body">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Fecha y hora</span>
+                        <span class="fw-bold fs-6">{{ remesa.fecha_hora|date:"d/m/Y H:i:s" }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Usuario responsable</span>
+                        <span class="fw-bold fs-6">{{ remesa.usuario_responsable.get_full_name|default:remesa.usuario_responsable.username }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Origen</span>
+                        <span class="badge bg-light text-dark border fs-6">{{ remesa.origen }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Destino</span>
+                        <span class="badge bg-light text-dark border fs-6">{{ remesa.destino }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Caja</span>
+                        <span class="fw-bold">{{ remesa.caja.sucursal.nombre }} — {{ remesa.caja.nombre }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Apertura activa vinculada</span>
+                        <span class="fw-bold">Apertura #{{ remesa.apertura_id }}</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Moneda</span>
+                        <span class="badge bg-secondary fs-6">{{ remesa.moneda.codigo }} ({{ remesa.moneda.nombre }})</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <span class="text-muted d-block small">Monto total</span>
+                        <span class="fw-bold fs-5 text-success">{{ remesa.moneda.codigo }} {{ remesa.monto_total|formato_numero:2 }}</span>
+                    </div>
+                    {% if remesa.observaciones %}
+                    <div class="col-12">
+                        <span class="text-muted d-block small">Observaciones</span>
+                        <p class="mb-0 bg-light p-2 rounded border">{{ remesa.observaciones }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <hr>
+
+                <h5 class="fw-bold mb-3">
+                    <i class="bi bi-cash-stack text-success me-2"></i>Desglose de billetes
+                </h5>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>Denominación</th>
+                                <th class="text-end">Valor facial</th>
+                                <th class="text-center">Cantidad de billetes</th>
+                                <th class="text-end">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for det in remesa.detalles.all %}
+                            <tr>
+                                <td class="text-center">{{ forloop.counter }}</td>
+                                <td>{{ det.denominacion }}</td>
+                                <td class="text-end">{{ det.valor_denominacion|formato_numero:2 }}</td>
+                                <td class="text-center fw-bold">{{ det.cantidad }}</td>
+                                <td class="text-end fw-semibold">{{ det.subtotal|formato_numero:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">Sin desglose registrado.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="table-secondary">
+                                <td colspan="4" class="text-end fw-bold fs-5">Monto total verificado:</td>
+                                <td class="text-end fw-bold fs-5 text-success">
+                                    {{ remesa.moneda.codigo }} {{ remesa.monto_total|formato_numero:2 }}
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <a href="{% url 'remesa-list' %}" class="btn btn-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Volver al historial
+                </a>
+                <a href="{% url 'remesa-create' %}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i>Registrar otra remesa
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

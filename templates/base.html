@@ -449,6 +449,13 @@
                                     <p>Denominaciones de billetes</p>
                                 </a>
                             </li>
+                            <li class="nav-item">
+                                <a href="{% url 'remesa-list' %}"
+                                   class="nav-link {% if active_menu == 'cajas' and active_submenu == 'remesas' %}active{% endif %}">
+                                    <i class="nav-icon bi bi-arrow-down-up"></i>
+                                    <p>Remesas de efectivo</p>
+                                </a>
+                            </li>
                             {% endif %}
 
                             {% if es_cajero %}
@@ -665,6 +672,21 @@
             });
 
     }
+
+    // Prevenir incremento/decremento accidental con la rueda del ratón o teclas de flechas en campos numéricos
+    document.addEventListener('wheel', (e) => {
+        if (e.target && (e.target.matches?.('input[type="number"]') || e.target.classList?.contains('cantidad-input'))) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.matches?.('input[type="number"]') || e.target.classList?.contains('cantidad-input'))) {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+            }
+        }
+    });
 
 </script>
 

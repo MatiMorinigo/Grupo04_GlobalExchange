@@ -61,6 +61,7 @@ def obtener_cajeros_keycloak():
             respuesta.raise_for_status()
             usuarios = respuesta.json()
 
+
             for usuario in usuarios:
                 if usuario.get("enabled", False):
                     cajeros.append({

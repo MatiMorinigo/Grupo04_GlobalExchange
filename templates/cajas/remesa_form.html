@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+{% load formato_numeros %}
+
+{% block title %}Registrar Remesa de Efectivo | Global Exchange{% endblock %}
+
+{% block content_header %}
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6">
+                <h3 class="mb-0"><i class="bi bi-arrow-down-up text-primary me-2"></i>Registrar Remesa de Efectivo</h3>
+            </div>
+            <div class="col-sm-6 text-end">
+                <a href="{% url 'remesa-list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Volver al historial
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card card-primary card-outline shadow-sm">
+            <div class="card-header">
+                <h4 class="card-title fw-bold">Transferencia entre Tesorería y Caja</h4>
+            </div>
+
+            <form method="post" id="remesa-form" novalidate>
+                {% csrf_token %}
+                <div class="card-body">
+                    {% if errores %}
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Se encontraron los siguientes errores:</strong>
+                        <ul class="mb-0 mt-2">
+                            {% for err in errores %}
+                            <li>{{ err }}</li>
+                            {% endfor %}
+                        </ul>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+                    </div>
+                    {% endif %}
+
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger" role="alert">
+                        {{ form.non_field_errors }}
+                    </div>
+                    {% endif %}
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label for="{{ form.caja.id_for_label }}" class="form-label fw-bold">
+                                Caja operativa <span class="text-danger">*</span>
+                            </label>
+                            {{ form.caja }}
+                            {% if form.caja.errors %}
+                            <div class="text-danger small mt-1">{{ form.caja.errors }}</div>
+                            {% endif %}
+                            <div class="form-text text-body-secondary">{{ form.caja.help_text }}</div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.tipo.id_for_label }}" class="form-label fw-bold">
+                                Tipo de remesa <span class="text-danger">*</span>
+                            </label>
+                            {{ form.tipo }}
+                            {% if form.tipo.errors %}
+                            <div class="text-danger small mt-1">{{ form.tipo.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-12">
+                            <div class="alert alert-info py-2 px-3 d-flex align-items-center gap-3" id="flujo-info">
+                                <i class="bi bi-info-circle fs-4"></i>
+                                <div>
+                                    <span class="fw-semibold">Sentido del movimiento:</span>
+                                    <span id="flujo-origen-destino" class="badge bg-primary fs-6 ms-2">
+                                        Tesorería → Caja seleccionada
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.moneda.id_for_label }}" class="form-label fw-bold">
+                                Moneda de la remesa <span class="text-danger">*</span>
+                            </label>
+                            {{ form.moneda }}
+                            {% if form.moneda.errors %}
+                            <div class="text-danger small mt-1">{{ form.moneda.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.observaciones.id_for_label }}" class="form-label fw-bold">
+                                Observaciones
+                            </label>
+                            {{ form.observaciones }}
+                            {% if form.observaciones.errors %}
+                            <div class="text-danger small mt-1">{{ form.observaciones.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">
+                            <i class="bi bi-cash-stack text-success me-2"></i>Desglose de billetes
+                        </h5>
+                        <button type="button" id="agregar-linea" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-plus-lg me-1"></i>Agregar denominación
+                        </button>
+                    </div>
+
+                    <p class="text-muted small">
+                        Especifique la cantidad de billetes para cada denominación de la moneda seleccionada. El monto total se calculará automáticamente.
+                    </p>
+
+                    {{ formset.management_form }}
+                    {% if formset.non_form_errors %}
+                    <div class="alert alert-danger" role="alert">
+                        {{ formset.non_form_errors }}
+                    </div>
+                    {% endif %}
+
+                    {% if denominaciones %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 45%;">Denominación</th>
+                                    <th style="width: 25%;">Cantidad</th>
+                                    <th style="width: 20%;" class="text-end">Subtotal</th>
+                                    <th style="width: 10%;" class="text-center">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="desglose-lineas">
+                                {% for form in formset %}
+                                {% include "cajas/_detalle_remesa_linea.html" %}
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr class="table-secondary">
+                                    <td colspan="2" class="text-end fw-bold fs-5">Monto total de la remesa:</td>
+                                    <td class="text-end fw-bold fs-5 text-success">
+                                        <span id="monto-total-display">0.00</span>
+                                    </td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-circle me-1"></i>No hay denominaciones registradas en el catálogo.
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="card-footer d-flex justify-content-between align-items-center bg-transparent py-3">
+                    <a href="{% url 'remesa-list' %}" class="btn btn-secondary">
+                        <i class="bi bi-x-circle me-1"></i>Cancelar
+                    </a>
+                    <button type="submit" id="btn-guardar-remesa" class="btn btn-primary px-4 fw-bold">
+                        <i class="bi bi-check2-circle me-1"></i>Registrar remesa
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<template id="desglose-vacio">
+    {% include "cajas/_detalle_remesa_linea.html" with form=formset.empty_form %}
+</template>
+
+{{ denominaciones|json_script:"denominaciones-data" }}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const denominacionesRaw = JSON.parse(document.getElementById('denominaciones-data').textContent || '[]');
+    const denomMap = new Map(denominacionesRaw.map(d => [String(d.id), { moneda: d.moneda_id, valor: parseFloat(d.valor) }]));
+
+    const monedaSelect = document.getElementById('id_moneda');
+    const tipoSelect = document.getElementById('id_tipo');
+    const cajaSelect = document.getElementById('id_caja');
+    const flujoBadge = document.getElementById('flujo-origen-destino');
+
+    const tablaLineas = document.getElementById('desglose-lineas');
+    const totalInput = document.getElementById('id_desglose-TOTAL_FORMS');
+    const maximo = Number(document.getElementById('id_desglose-MAX_NUM_FORMS')?.value || 100);
+    const btnAgregar = document.getElementById('agregar-linea');
+    const displayTotal = document.getElementById('monto-total-display');
+
+    function actualizarSentido() {
+        if (!tipoSelect || !flujoBadge) return;
+        const tipo = tipoSelect.value;
+        const textoCaja = cajaSelect && cajaSelect.selectedOptions.length > 0 && cajaSelect.value
+            ? cajaSelect.selectedOptions[0].text
+            : 'Caja operativa';
+
+        if (tipo === 'ENTREGA') {
+            flujoBadge.textContent = 'Tesorería → ' + textoCaja;
+            flujoBadge.className = 'badge bg-success fs-6 ms-2';
+        } else if (tipo === 'DEVOLUCION') {
+            flujoBadge.textContent = textoCaja + ' → Tesorería';
+            flujoBadge.className = 'badge bg-warning text-dark fs-6 ms-2';
+        } else {
+            flujoBadge.textContent = 'Seleccione tipo';
+            flujoBadge.className = 'badge bg-secondary fs-6 ms-2';
+        }
+    }
+
+    if (tipoSelect) tipoSelect.addEventListener('change', actualizarSentido);
+    if (cajaSelect) cajaSelect.addEventListener('change', actualizarSentido);
+    actualizarSentido();
+
+    function filtrarOpcionesFila(fila) {
+        const select = fila.querySelector('.denominacion-select');
+        if (!select) return;
+        const monedaActual = monedaSelect ? monedaSelect.value : '';
+
+        const valorActual = select.value;
+        let opciones = select.dataset.todasOpciones ? JSON.parse(select.dataset.todasOpciones) : null;
+        if (!opciones) {
+            opciones = Array.from(select.options).map(opt => ({
+                value: opt.value,
+                text: opt.text,
+                moneda: denomMap.get(opt.value)?.moneda || ''
+            }));
+            select.dataset.todasOpciones = JSON.stringify(opciones);
+        }
+
+        select.innerHTML = '';
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = '';
+        defaultOpt.textContent = '---------';
+        select.appendChild(defaultOpt);
+
+        opciones.forEach(opt => {
+            if (!opt.value) return;
+            if (!monedaActual || opt.moneda === monedaActual) {
+                const el = document.createElement('option');
+                el.value = opt.value;
+                el.textContent = opt.text;
+                if (opt.value === valorActual) {
+                    el.selected = true;
+                }
+                select.appendChild(el);
+            }
+        });
+    }
+
+    function recalcularFila(fila) {
+        const select = fila.querySelector('.denominacion-select');
+        const cantInput = fila.querySelector('.cantidad-input');
+        const subtotalSpan = fila.querySelector('.linea-subtotal');
+        if (!select || !cantInput || !subtotalSpan) return 0;
+
+        const dId = select.value;
+        const cant = parseInt(cantInput.value, 10) || 0;
+        const dInfo = denomMap.get(dId);
+
+        let subtotal = 0;
+        if (dInfo && cant > 0) {
+            subtotal = dInfo.valor * cant;
+        }
+        subtotalSpan.textContent = subtotal.toLocaleString('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return subtotal;
+    }
+
+    function recalcularTotal() {
+        let granTotal = 0;
+        const filas = tablaLineas.querySelectorAll('.desglose-linea');
+        filas.forEach(f => {
+            const checkDelete = f.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (checkDelete && checkDelete.checked) {
+                f.style.opacity = '0.4';
+                return;
+            }
+            f.style.opacity = '1';
+            granTotal += recalcularFila(f);
+        });
+
+        if (displayTotal) {
+            displayTotal.textContent = granTotal.toLocaleString('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+    }
+
+    function configurarFila(fila) {
+        filtrarOpcionesFila(fila);
+
+        const select = fila.querySelector('.denominacion-select');
+        const cantInput = fila.querySelector('.cantidad-input');
+        const checkDelete = fila.querySelector('input[type="checkbox"][name$="-DELETE"]');
+
+        if (select) {
+            select.addEventListener('change', () => {
+                recalcularTotal();
+            });
+        }
+        if (cantInput) {
+            cantInput.addEventListener('input', () => {
+                recalcularTotal();
+            });
+            cantInput.addEventListener('wheel', (e) => {
+                e.preventDefault();
+            }, { passive: false });
+            cantInput.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                }
+            });
+        }
+        if (checkDelete) {
+            checkDelete.addEventListener('change', () => {
+                recalcularTotal();
+            });
+        }
+    }
+
+    document.addEventListener('wheel', (e) => {
+        if (e.target && (e.target.matches?.('input[type="number"]') || e.target.classList?.contains('cantidad-input'))) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.matches?.('input[type="number"]') || e.target.classList?.contains('cantidad-input'))) {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+            }
+        }
+    });
+
+    if (monedaSelect) {
+        monedaSelect.addEventListener('change', () => {
+            const filas = tablaLineas.querySelectorAll('.desglose-linea');
+            filas.forEach(filtrarOpcionesFila);
+            recalcularTotal();
+        });
+    }
+
+    if (tablaLineas) {
+        tablaLineas.querySelectorAll('.desglose-linea').forEach(configurarFila);
+    }
+
+    if (btnAgregar && totalInput) {
+        btnAgregar.addEventListener('click', () => {
+            const indice = Number(totalInput.value);
+            if (indice >= maximo) return;
+
+            const templateHtml = document.getElementById('desglose-vacio').innerHTML.replaceAll('__prefix__', String(indice));
+            tablaLineas.insertAdjacentHTML('beforeend', templateHtml);
+            const nuevaFila = tablaLineas.lastElementChild;
+            configurarFila(nuevaFila);
+
+            totalInput.value = indice + 1;
+            btnAgregar.disabled = Number(totalInput.value) >= maximo;
+            recalcularTotal();
+        });
+    }
+
+    recalcularTotal();
+})();
+</script>
+{% endblock %}

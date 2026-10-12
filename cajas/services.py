@@ -7,10 +7,12 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from core.keycloak import obtener_claims_verificados
+from decimal import Decimal
+from core.keycloak import obtener_claims_verificados, tiene_rol
+from cotizaciones.models import Moneda
 from .models import (
     AperturaCaja, AsignacionCaja, Caja, DenominacionBillete,
-    DetalleInventarioInicial, Sucursal,
+    DetalleInventarioInicial, Sucursal, Remesa, DetalleRemesa,
 )
 
 MAX_LINEAS_INVENTARIO = 100
@@ -146,3 +148,166 @@ def apertura_para_movimiento(caja_id):
         if apertura.estado != AperturaCaja.Estado.ABIERTA:
             raise AperturaCajaError("La caja no tiene una apertura activa.")
         yield apertura
+
+
+# ---------------------------------------------------------------------------
+# Remesas de Efectivo (HU-36)
+# ---------------------------------------------------------------------------
+
+class RemesaError(ValidationError):
+    """Error de regla de negocio o validación al registrar una remesa."""
+
+
+def registrar_remesa(
+    *,
+    request=None,
+    usuario=None,
+    caja_id=None,
+    tipo=None,
+    moneda_id=None,
+    desglose=None,
+    observaciones="",
+):
+    """Registra una remesa (entrega o devolución) entre Tesorería y una caja (HU-36).
+
+    Valida:
+    - Permisos: tesorero o administrador.
+    - Caja y apertura activa con bloqueo transaccional concurrente.
+    - Moneda y denominaciones válidas y activas.
+    - En caso de devolución (egreso de caja), que no supere el saldo disponible
+      ni el inventario de billetes de esa denominación.
+    - Registra origen, destino, usuario responsable, fecha y hora real.
+    """
+    if request is not None:
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied("Debe iniciar sesión para operar.")
+        if not (
+            tiene_rol(request, "tesorero")
+            or tiene_rol(request, "administrador")
+            or request.user.is_superuser
+        ):
+            raise PermissionDenied("Solo los tesoreros o administradores pueden registrar remesas.")
+        usuario = request.user
+    elif usuario is None:
+        raise RemesaError("Se requiere un usuario responsable.")
+
+    if not caja_id:
+        raise RemesaError("Debe seleccionar una caja.")
+
+    if tipo not in (Remesa.Tipo.ENTREGA, Remesa.Tipo.DEVOLUCION):
+        raise RemesaError("Tipo de remesa inválido.")
+
+    if not moneda_id:
+        raise RemesaError("Debe seleccionar una moneda.")
+
+    try:
+        moneda = Moneda.objects.get(pk=moneda_id, activa=True)
+    except Moneda.DoesNotExist as err:
+        raise RemesaError("La moneda seleccionada no existe o no está activa.") from err
+
+    if not desglose or not isinstance(desglose, list):
+        raise RemesaError("Debe indicar el desglose de billetes de la remesa.")
+
+    if len(desglose) > MAX_LINEAS_INVENTARIO:
+        raise RemesaError(f"El desglose no puede superar {MAX_LINEAS_INVENTARIO} líneas.")
+
+    # Validar denominaciones y cantidades
+    denominaciones_ids = []
+    lineas_limpias = []
+    for item in desglose:
+        if not isinstance(item, dict) or "denominacion_id" not in item or "cantidad" not in item:
+            raise RemesaError("Línea de desglose inválida.")
+        try:
+            d_id = int(item["denominacion_id"])
+            cantidad = int(item["cantidad"])
+        except (ValueError, TypeError):
+            raise RemesaError("Denominación o cantidad inválida en el desglose.")
+        if cantidad <= 0:
+            raise RemesaError("La cantidad de billetes en cada línea debe ser mayor a cero.")
+        denominaciones_ids.append(d_id)
+        lineas_limpias.append((d_id, cantidad))
+
+    if len(set(denominaciones_ids)) != len(denominaciones_ids):
+        raise RemesaError("No repita denominaciones dentro del desglose de la remesa.")
+
+    denominaciones_map = {
+        d.pk: d
+        for d in DenominacionBillete.objects.filter(
+            pk__in=denominaciones_ids, activa=True, moneda=moneda
+        )
+    }
+
+    if len(denominaciones_map) != len(denominaciones_ids):
+        raise RemesaError("El desglose contiene denominaciones que no existen, no están activas o no pertenecen a la moneda seleccionada.")
+
+    monto_total = Decimal("0.00")
+    desglose_procesado = []
+    for d_id, cantidad in lineas_limpias:
+        denom = denominaciones_map[d_id]
+        subtotal = denom.valor * cantidad
+        monto_total += subtotal
+        desglose_procesado.append({
+            "denominacion": denom,
+            "cantidad": cantidad,
+            "subtotal": subtotal,
+        })
+
+    if monto_total <= 0:
+        raise RemesaError("El monto total de la remesa debe ser mayor a cero.")
+
+    # Adquirir bloqueos y validar caja con apertura_para_movimiento
+    try:
+        with apertura_para_movimiento(caja_id) as apertura:
+            if tipo == Remesa.Tipo.DEVOLUCION:
+                # Criterio 6: El sistema no debe permitir registrar egresos superiores al efectivo disponible.
+                saldo_disponible = apertura.obtener_saldo_actual(moneda.pk)
+                if monto_total > saldo_disponible:
+                    raise RemesaError(
+                        f"El monto a devolver ({moneda.codigo} {monto_total}) supera el saldo disponible en caja ({moneda.codigo} {saldo_disponible})."
+                    )
+
+                inventario_actual = apertura.obtener_inventario_actual(moneda_id=moneda.pk)
+                for item in desglose_procesado:
+                    denom = item["denominacion"]
+                    cant_pedida = item["cantidad"]
+                    stock_disp = inventario_actual.get(denom.pk, {}).get("cantidad", 0)
+                    if cant_pedida > stock_disp:
+                        raise RemesaError(
+                            f"La cantidad de billetes de {denom.valor} a devolver ({cant_pedida}) supera la cantidad disponible en el inventario de la caja ({stock_disp})."
+                        )
+
+            # Determinar origen y destino
+            if tipo == Remesa.Tipo.ENTREGA:
+                origen = "Tesorería"
+                destino = f"Caja {apertura.caja.codigo} - {apertura.caja.nombre}"
+            else:
+                origen = f"Caja {apertura.caja.codigo} - {apertura.caja.nombre}"
+                destino = "Tesorería"
+
+            remesa = Remesa.objects.create(
+                caja=apertura.caja,
+                apertura=apertura,
+                tipo=tipo,
+                origen=origen,
+                destino=destino,
+                moneda=moneda,
+                monto_total=monto_total,
+                usuario_responsable=usuario,
+                observaciones=observaciones or "",
+            )
+
+            detalles = [
+                DetalleRemesa(
+                    remesa=remesa,
+                    denominacion=item["denominacion"],
+                    valor_denominacion=item["denominacion"].valor,
+                    cantidad=item["cantidad"],
+                )
+                for item in desglose_procesado
+            ]
+            DetalleRemesa.objects.bulk_create(detalles)
+
+            return remesa
+    except AperturaCajaError as error:
+        raise RemesaError(str(error)) from error
+
