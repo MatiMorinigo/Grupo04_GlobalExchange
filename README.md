@@ -128,6 +128,11 @@ El código fuente del proyecto se administra mediante Git y GitHub.
 
 El equipo utilizará ramas para organizar el desarrollo y facilitar la integración de los cambios realizados por los distintos integrantes.
 
+## Configuración de Stripe (pruebas locales)
+
+El flujo actual cobra con PaymentIntents y tarjetas de prueba. Configuración,
+comandos de arranque y diagnóstico: [guía de Stripe](docs/stripe.md).
+
 ## Estado del proyecto
 
 🚧 Proyecto actualmente en desarrollo.

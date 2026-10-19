@@ -138,9 +138,9 @@ NOTIFICACIONES_PAUSA_ENVIO = float(os.getenv("NOTIFICACIONES_PAUSA_ENVIO", 0))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Global Exchange <no-responder@globalexchange.com.py>")
 
 # Pagos - Stripe (modo test: la clave debe comenzar con sk_test_)
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
 # Secreto whsec_... con el que se verifica la firma de los webhooks de Stripe
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 
 # CORS
 CORS_ALLOWED_ORIGINS = [
